@@ -3,8 +3,8 @@
 import base64
 import json
 import re
-import yaml # نیاز به نصب: pip install PyYAML
-from typing import List, Dict, Optional # NEW: Import List, Dict, Optional
+import yaml # pip install PyYAML
+from typing import List, Dict, Optional # Added List, Dict, Optional
 from src.utils.settings_manager import settings
 from src.collectors.telegram_collector import get_config_regex_patterns # Re-using regex patterns
 
