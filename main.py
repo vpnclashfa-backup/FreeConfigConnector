@@ -40,7 +40,7 @@ async def main_collector_flow():
     except Exception as e:
         print(f"Main: An unhandled error occurred during collection process: {e}")
         import traceback
-        traceback.print_exc()
+        traceback.print_exc() # Print full traceback for unexpected errors
     finally:
         # Ensure all collectors are properly closed
         if telegram_collector:
@@ -63,9 +63,7 @@ async def main_collector_flow():
         source_manager.finalize()
 
         # Generate and print final report
-        initial_telegram_channels_count = len(source_manager.get_active_telegram_channels())
-        initial_websites_count = len(source_manager.get_active_websites())
-        
+        # These counts are already handled by stats_reporter.start_report call in __main__
         stats_reporter.set_unique_collected(len(final_unique_links)) 
         stats_reporter.end_report() 
         
