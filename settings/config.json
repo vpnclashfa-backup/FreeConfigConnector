@@ -118,6 +118,12 @@
     "timeout_telegram_channels_file": "timeout_telegram_channels.json",
     "_comment_": "فایلی برای ذخیره کانال‌های تلگرام که به دلیل خطاهای مکرر تایم‌اوت شده‌اند",
     "timeout_websites_file": "timeout_websites.json",
-    "_comment_": "فایلی برای ذخیره وب‌سایت‌هایی که به دلیل خطاهای مکرر تایم‌اوت شده‌اند"
+    "_comment_": "فایلی برای ذخیره وب‌سایت‌هایی که به دلیل خطاهای مکرر تایم‌اوت شده‌اند",
+    "sub_dir": "subs",
+    "_comment_": "پوشه اصلی برای خروجی های سابسکریپشن",
+    "base64_sub_file": "base64/base64_links.txt",
+    "_comment_": "فایل خروجی برای لینک های بیس64 شده",
+    "plaintext_sub_file": "plaintext/plaintext_links.txt",
+    "_comment_": "فایل خروجی برای لینک های متنی معمولی"
   }
 }
