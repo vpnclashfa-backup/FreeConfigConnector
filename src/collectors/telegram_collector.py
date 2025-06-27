@@ -2,22 +2,27 @@
 
 from telethon.sync import TelegramClient
 from telethon.tl.types import Message
-from telethon.errors import SessionPasswordNeededError, FloodWaitError, PeerFloodError, ChannelPrivateError, RPCError
+from telethon.tl.types import (
+    MessageEntityBold, MessageEntityItalic, MessageEntityUnderline,
+    MessageEntityStrike, MessageEntityCode, MessageEntityPre,
+    MessageEntitySpoiler, MessageEntityBlockquote, MessageEntityCustomEmoji,
+    MessageEntityTextUrl, MessageEntityMention, MessageEntityHashtag,
+    MessageEntityCashtag, MessageEntityBotCommand, MessageEntityEmail,
+    MessageEntityUrl, MessageEntityPhoneNumber, MessageEntityMentionName,
+    MessageEntityBankCard, MessageEntityPhone, MessageEntityEmail
+)
 import re
 import os
 import json
 from datetime import datetime, timezone
-import asyncio # نیاز است چون از await و async استفاده می کنیم
+import asyncio 
 
-# Import settings from our custom settings manager
 from src.utils.settings_manager import settings
 
-# این تابع الگوهای RegEx را برای پروتکل‌های مختلف VPN/پروکسی تعریف می‌کند.
 def get_config_regex_patterns():
     patterns = {}
     base_pattern_suffix = r"[^\s\<\>\[\]\{\}\(\)\"\'\`]+"
 
-    # نقشه جامع پروتکل‌ها به الگوهای RegEx خاص آن‌ها
     protocol_regex_map = {
         "http": r"https?:\/\/" + base_pattern_suffix,
         "socks5": r"socks5:\/\/" + base_pattern_suffix,
@@ -52,7 +57,7 @@ class TelegramLinkCollector:
     def __init__(self, api_id, api_hash, session_name='telegram_session'):
         self.client = TelegramClient(session_name, api_id, api_hash)
         self.config_patterns = get_config_regex_patterns()
-        self.channel_scores = {} # برای ردیابی امتیاز کانال‌ها
+        self.channel_scores = {}
 
     async def connect(self):
         print("Connecting to Telegram...")
@@ -64,20 +69,31 @@ class TelegramLinkCollector:
             print("Connected to Telegram.")
         except SessionPasswordNeededError:
             print("Error: Two-factor authentication is enabled. Please provide the password.")
-            # You might want to prompt the user for password here or handle it.
             await self.client.disconnect()
             raise
         except Exception as e:
             print(f"Failed to connect to Telegram: {e}")
             raise
 
+    async def _extract_links_from_text(self, text_content):
+        """
+        Extracts config links from a given text content using defined regex patterns.
+        """
+        found_links = []
+        for protocol, pattern in self.config_patterns.items():
+            matches = re.findall(pattern, text_content, re.IGNORECASE)
+            for link in matches:
+                found_links.append({'protocol': protocol, 'link': link.strip()})
+        return found_links
+
     async def get_links_from_channel(self, channel_username):
         """
         لینک‌های پیکربندی را از یک کانال تلگرام مشخص جمع‌آوری می‌کند.
         شامل بهبودهایی برای مدیریت خطا و امتیازدهی به کانال‌ها.
+        همچنین انواع فرمت‌های متنی (مثل کد بلاک) را بررسی می‌کند.
         """
         collected_links = []
-        self.channel_scores[channel_username] = self.channel_scores.get(channel_username, 0) # امتیاز اولیه
+        self.channel_scores[channel_username] = self.channel_scores.get(channel_username, 0)
 
         try:
             entity = await self.client.get_entity(channel_username)
@@ -85,55 +101,68 @@ class TelegramLinkCollector:
 
             offset_date = datetime.now(timezone.utc) - settings.TELEGRAM_MESSAGE_LOOKBACK_DURATION
 
-            # تنظیم اولیه تأخیر برای هر کانال (با توجه به بهبود هوشمند)
             initial_delay = 1 # ثانیه
-            current_delay = initial_delay * (1 + self.channel_scores[channel_username] * 0.1) # با افزایش امتیاز منفی، تأخیر بیشتر می‌شود
+            current_delay = initial_delay * (1 + self.channel_scores[channel_username] * 0.1)
 
             async for message in self.client.iter_messages(
                 entity,
                 limit=settings.TELEGRAM_MAX_MESSAGES_PER_CHANNEL,
                 offset_date=offset_date
             ):
-                if message.text:
-                    found_in_message = False
-                    for protocol, pattern in self.config_patterns.items():
-                        found_links = re.findall(pattern, message.text, re.IGNORECASE)
-                        for link in found_links:
-                            collected_links.append({'protocol': protocol, 'link': link.strip()})
-                            found_in_message = True
+                if not message.text:
+                    continue # اگر پیام متنی نداشت، رد شو
 
-                    # اگر در یک پیام، هیچ لینکی پیدا نشد، ممکن است نشان‌دهنده محتوای نامربوط باشد
-                    # این بخش را فعلاً برای سادگی پیچیده نمی‌کنیم، اما می‌توان آن را هوشمندتر کرد.
+                # 1. ابتدا کل متن پیام را بررسی کن
+                links_from_full_text = await self._extract_links_from_text(message.text)
+                collected_links.extend(links_from_full_text)
+
+                # 2. بررسی entityها برای استخراج متن از فرمت‌های خاص (مثلاً کد بلاک)
+                if message.entities:
+                    for entity in message.entities:
+                        start = entity.offset
+                        end = entity.offset + entity.length
+                        entity_text = message.text[start:end]
+
+                        # انواع مختلف MessageEntity برای قالب‌بندی‌های خاص
+                        if isinstance(entity, (MessageEntityCode, MessageEntityPre, MessageEntityBlockquote, MessageEntitySpoiler)):
+                            # این فرمت‌ها معمولاً محتوای کانفیگ را به صورت خام نگه می‌دارند
+                            extracted_from_entity = await self._extract_links_from_text(entity_text)
+                            collected_links.extend(extracted_from_entity)
+
+                        # برای انواع دیگر مثل Bold, Italic, Underline, Strikethrough، متن همچنان بخشی از message.text است
+                        # و توسط بررسی اولیه پوشش داده می‌شود.
+                        # اگر نیاز بود، می‌توانیم برای اینها هم منطق خاصی اضافه کنیم.
+                        # مثال: MessageEntityBold, MessageEntityItalic, MessageEntityUnderline, MessageEntityStrike
+                        # MessageEntityTextUrl (اگر لینک داخل خودش یک کانفیگ باشد)
+
+            # حذف لینک‌های تکراری در این مرحله برای هر کانال
+            collected_links = list({link['link']: link for link in collected_links}.values())
 
             if not collected_links:
                 print(f"No config links found in {channel_username} within the specified criteria.")
-                self.channel_scores[channel_username] -= 1 # امتیاز منفی برای عدم یافتن کانفیگ
+                self.channel_scores[channel_username] -= 1
             else:
                 print(f"Found {len(collected_links)} links in {channel_username}.")
-                self.channel_scores[channel_username] += 1 # امتیاز مثبت برای یافتن کانفیگ
+                self.channel_scores[channel_username] += 1
 
         except FloodWaitError as e:
             print(f"Warning: Flood wait of {e.seconds} seconds encountered for {channel_username}. Waiting...")
-            await asyncio.sleep(e.seconds + current_delay) # اضافه کردن تأخیر بیشتر
-            self.channel_scores[channel_username] -= 5 # امتیاز منفی شدید برای فلود
+            await asyncio.sleep(e.seconds + current_delay)
+            self.channel_scores[channel_username] -= 5
             print(f"Resuming collection for {channel_username} after wait.")
-            # اگر خواستید می‌توانید دوباره همین کانال را فراخوانی کنید
-            # return await self.get_links_from_channel(channel_username)
         except PeerFloodError:
             print(f"Warning: Peer Flood encountered for {channel_username}. Skipping for now.")
-            self.channel_scores[channel_username] -= 10 # امتیاز منفی بسیار شدید
+            self.channel_scores[channel_username] -= 10
         except ChannelPrivateError:
             print(f"Error: Channel {channel_username} is private or inaccessible. Skipping.")
-            self.channel_scores[channel_username] -= 2 # امتیاز منفی
+            self.channel_scores[channel_username] -= 2
         except RPCError as e:
             print(f"An RPC error occurred for {channel_username}: {e}. Skipping this channel.")
-            self.channel_scores[channel_username] -= 3 # امتیاز منفی
+            self.channel_scores[channel_username] -= 3
         except Exception as e:
             print(f"An unexpected error occurred while collecting from {channel_username}: {e}. Skipping this channel.")
-            self.channel_scores[channel_username] -= 1 # امتیاز منفی
+            self.channel_scores[channel_username] -= 1
 
-        # در هر صورت، حتی اگر خطا رخ داد، لیست لینک‌های جمع‌آوری شده تا آن لحظه را برگردان
-        # یا در صورت خطا، لیست خالی برگردان
         return collected_links
 
 
@@ -166,7 +195,7 @@ async def main():
 
     try:
         await collector.connect()
-    except Exception: # اگر اتصال موفقیت آمیز نبود، از تابع خارج می‌شویم
+    except Exception:
         return []
 
     channels_file_path = settings.CHANNELS_FILE
@@ -177,20 +206,18 @@ async def main():
     with open(channels_file_path, 'r', encoding='utf-8') as f:
         raw_channels = [line.strip() for line in f if line.strip()]
         target_channels = [standardize_channel_username(ch) for ch in raw_channels]
-        target_channels = list(set(target_channels)) # حذف موارد تکراری
+        target_channels = list(set(target_channels))
 
     all_collected_links = []
     for channel in target_channels:
         print(f"Processing channel: {channel}")
-        # اجرای جمع آوری لینک‌ها و افزودن به لیست
         collected_for_channel = await collector.get_links_from_channel(channel)
         all_collected_links.extend(collected_for_channel)
-        # یک تأخیر کوتاه بین کانال‌ها برای کاهش احتمال FloodWait
-        await asyncio.sleep(1) # 1 ثانیه تأخیر بین پردازش هر کانال
+        await asyncio.sleep(1)
 
     await collector.disconnect()
 
-    return all_collected_links # بازگرداندن لینک‌های جمع‌آوری شده
+    return all_collected_links
 
 if __name__ == "__main__":
     import asyncio
