@@ -18,7 +18,7 @@ class ConfigValidator:
     def is_base64(s: str) -> bool:
         """Checks if a string is a valid base64 (standard or URL-safe) string."""
         s_clean = s.rstrip('=')
-        return bool(re.fullmatch(r'^[A-Za-z0-9+/_-]*$', s_clean))
+        return bool(re.fullmatch(r'^[A-Za-z0-9+/\-_]*$', s_clean))
 
     @staticmethod
     def decode_base64_url(s: str) -> Optional[bytes]:
@@ -129,7 +129,6 @@ class ConfigValidator:
             if not config.startswith('tuic://'):
                 return False
             parsed = urlparse(config)
-            # TUIC requires a UUID:password@ format often. Basic check on netloc.
             return bool(parsed.netloc and ':' in parsed.netloc)
         except Exception:
             return False
@@ -165,18 +164,15 @@ class ConfigValidator:
     @staticmethod
     def is_valid_protocol_prefix(config_str: str) -> bool:
         """Checks if a string starts with any protocol prefix from PROTOCOL_REGEX_MAP."""
-        # Using a pre-compiled regex for efficiency for common prefixes
-        # It's safer to check against the keys of PROTOCOL_REGEX_MAP directly.
-        # This will be used for splitting, so it should be general.
-        return bool(re.match(r'^[a-zA-Z0-9]+\:\/\/', config_str))
+        return any(config_str.startswith(p + '://') for p in PROTOCOL_REGEX_MAP.keys())
 
 
     # --- General Cleaning and Splitting from Text (Revised) ---
     @staticmethod
     def clean_config_string(config_text: str) -> str:
         """
-        Removes common non-printable characters and reduces excessive whitespace.
-        This version is less aggressive on emojis/numbers which might serve as delimiters.
+        Removes only truly unwanted characters that would break URL parsing or are purely cosmetic.
+        This is now much less aggressive to preserve actual config data.
         """
         # Remove common invisible/control characters (including ZWJ, ZWNJ, BOM, etc.)
         config_text = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u200B-\u200F\u0640\u202A-\u202E\u2066-\u2069\uFEFF\u0000-\u001F\u007F-\u009F]', '', config_text)
@@ -202,76 +198,91 @@ class ConfigValidator:
         cleaned_full_text = ConfigValidator.clean_config_string(text)
 
         # Find all occurrences of known protocol prefixes in the cleaned text
-        matches = list(protocols_regex.finditer(cleaned_full_text))
+        # This gives us the starting points of potential configs.
+        protocol_start_matches = list(protocols_regex.finditer(cleaned_full_text))
         
-        if not matches:
+        if not protocol_start_matches:
             return []
 
-        # Pattern for common delimiters that signify the end of a config.
-        # This is CRUCIAL for robust splitting.
-        # It looks for:
-        # 1. Newline or multiple spaces (>= 2)
-        # 2. Common emojis/symbols often used as separators (e.g., checkmarks, arrows, numbers with squares)
-        # 3. Specific Farsi/English phrases/metadata that often follow a config.
-        # This list needs to be comprehensive based on observed data.
-        end_delimiters_pattern = re.compile(
-            r'\s{2,}|\n|' # Two or more spaces, or a newline
-            r'[\u2705\u2714\u274c\u274e\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u26A0\u26A1\u26D4\u26C4\u26F0-\u26F5\u26FA\u26FD\u2700-\u27BF\u23F3\u231B\u23F8-\u23FA\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]+|' # Common emojis/symbols
-            r'\d{1,2}[\uFE0F\u20E3]?\s*[\u2705\u2714\u274c\u274e\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u26A0\u26A1\u26D4\u26C4\u26F0-\u26F5\u26FA\u26FD\u2700-\u27BF\u23F3\u231B\u23F8-\u23FA\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\ufe00-\ufe0f\u200b-\u200d\uFEFF\u200e\u200f\u202a-\u202e\u2066-\u2069]+|' # Numbers with emojis (e.g., 5️⃣ 📥)
-            r'\[\s*\]t\.me\/[a-zA-Z0-9_]+\s*ϟ.*ᴄᴏᴜɴᴛʀʏ:\s*#.*[a-zA-Z0-9]+\s*\([A-Z]{2}\)\s*ᴄᴏɴғɪɢsʜᴜʙ\s*₪\s*ᴀʀɪʏᴀ\s*₪\s*ʙᴏᴛ\s*₪\s*ʜᴇʟᴘ|' + # Complex channel metadata
-            r'Channel\s*https:\/\/t\.me\/[a-zA-Z0-9_]+|' + # 'Channel https://t.me/...'
-            r'برای سرور های جدید داخل چنل زیر عضو بشید Channel https:\/\/t\.me\/[a-zA-Z0-9_]+|' + # Farsi specific discovery text
-            r'اپراتورها\s*@\w+|' + # 'اپراتورها @channel'
-            r'@\w+\s*[🔺👇]+|' + # '@channel 🔺👇'
-            r'#کانفیگ\s*#proxy\s*#vray|' + # Hashtag blocks
-            r'Tel\.\s*Channel|' + # 'Tel. Channel'
-            r'برای دوستان خود ارسال کنید|' + # Farsi call to action
-            r'وصله\s*\؟|' + # Farsi question "connected?"
-            r'ایرانسل، مخابرات و رایتل|' + # Farsi text
-            r'تست شده روی مخابرات و همراه اول|' + # Farsi text
-            r'لطفاً دانلود نداشته باشید\s*\/\s*برای اتصال تا یک دقیقه صبر کنید\s*\.|' + # Farsi instruction
-            r'اینترنت\s*پروکسی_رایگان\s*کانال رو معرفی و شیر کنین\s*@\w+|' + # Farsi text with channel
-            r'حتما\s*vrayng\s*رو به نسخه اخر آپدیت کنین\.|' + # Farsi instructions
-            r'اگه کاربر ios هستید، از اپ Streisand و Vbox استفاده کنید\.|' + # Farsi instructions
-            r'\s+MCI\s+&.*@\w+' # MCI &... @channel
-            , re.IGNORECASE | re.DOTALL # re.DOTALL to match across newlines
-        )
+        # This regex identifies common patterns that signify the end of a config.
+        # It needs to be very precise to avoid cutting off valid parts of a URL
+        # while effectively separating junk.
+        # Characters allowed in URL path, query, fragment: a-zA-Z0-9.\-_~:/?#[\]@!$&'()*+,;%=
+        # We look for a clear break:
+        # - Two or more spaces, or a newline
+        # - The start of another protocol (lookahead)
+        # - Common visual separators / emojis that are NOT part of a valid URL character set
+        # - Specific phrases indicating end of config or start of new section.
 
-        for i, match in enumerate(matches):
+        # A non-greedy match of any character up to a delimiter or next protocol start.
+        # We need to make sure the regex in protocol_definitions.py is general enough to *start* the match,
+        # and then this splitting logic *finds the end* of that started match.
+        
+        # Let's simplify the split logic: capture everything until the next protocol start, or end of string.
+        # Then, apply *post-processing* to strip common junk from the *end* of the captured string.
+        # This is often more reliable than complex "end-of-config" lookaheads.
+
+        # Combined protocol prefix pattern for finding *next* config
+        # (This is the same as protocols_regex passed in)
+        
+        for i, match in enumerate(protocol_start_matches):
             start_index = match.start()
             
-            # Determine the end of the current config candidate
-            candidate_segment_end_index = -1
-            if i + 1 < len(matches):
-                # End is the start of the next config
-                candidate_segment_end_index = matches[i+1].start()
-            else:
-                # Last config, consider the rest of the text
-                candidate_segment_end_index = len(cleaned_full_text)
+            end_of_current_config_candidate = len(cleaned_full_text)
+            if i + 1 < len(protocol_start_matches):
+                end_of_current_config_candidate = protocol_start_matches[i+1].start()
             
-            # Extract the raw segment between current and next protocol prefix
-            raw_config_candidate_segment = cleaned_full_text[start_index:candidate_segment_end_index].strip()
-
-            # Now, apply the end_delimiters_pattern to this segment to find the actual end of the current config
-            # This handles cases where junk is immediately after a config but before the next protocol prefix.
-            match_actual_end = end_delimiters_pattern.search(raw_config_candidate_segment)
+            # Extract the segment from current protocol start to next protocol start (or end of text)
+            raw_segment = cleaned_full_text[start_index:end_of_current_config_candidate].strip()
             
-            final_config_str = ""
-            if match_actual_end:
-                final_config_str = raw_config_candidate_segment[:match_actual_end.start()].strip()
-            else:
-                final_config_str = raw_config_candidate_segment # No specific delimiter found, take the whole segment
-
-            # Apply protocol-specific cleaning based on its detected start
-            if final_config_str.startswith("vmess://"):
-                final_config_str = ConfigValidator.clean_vmess_config(final_config_str)
-            elif final_config_str.startswith("hy2://"):
-                final_config_str = ConfigValidator.normalize_hysteria2_protocol(final_config_str)
+            # Now, refine the end of this segment. This is where we cut off trailing junk.
+            # Define common junk patterns that come *after* a config but are *not* part of the next config.
+            # This regex is specifically tailored for the junk observed in your samples.
+            junk_at_end_pattern = re.compile(
+                r'(\s*#\s*✅\s*@\w+|' + # # ✅ @channelname
+                r'\s*\d+[\uFE0F\u20E3]?\s*[\U0001F600-\U0001F9FF\u2705-\u27BF\ufe00-\ufe0f]+|' + # Number + emoji/symbol (e.g., 6️⃣ 📥)
+                r'\s*#کانفیگ\s*#proxy\s*#vray.*|' + # Hashtag block
+                r'\s*اپراتورها\s*@\w+.*|' + # اپراتورها @channel
+                r'\s*برای سرور های جدید داخل چنل زیر عضو بشید Channel https:\/\/t\.me\/[a-zA-Z0-9_]+.*|' + # Farsi discovery phrase
+                r'\s*Channel\s*https:\/\/t\.me\/[a-zA-Z0-9_]+.*|' + # Channel https://t.me/...
+                r'\s*Telegram\s*\|\s*@\w+.*|' + # Telegram | @channel
+                r'\s*✔️سرور جدید V2ray.*|' + # Specific intro phrase
+                r'\s*روی سرور زیر انگشت بزنید،همگی کپی می‌شوند.*|' + # Farsi instruction
+                r'\s*✅لطفاً دانلود نداشته باشید \/ برای اتصال تا یک دقیقه صبر کنید \s*\.|' + # Farsi instruction
+                r'\s*🌐@Canfing_VPN \| به اشتراک بگذارید.*|' + # Farsi ending with channel
+                r'\s*---------------.*|' + # Horizontal line
+                r'\s*🔳\s*@\w+.*|' + # Box emoji + channel
+                r'\s*\[\s*\]t\.me\/[a-zA-Z0-9_]+\s*ϟ.*ᴄᴏᴜɴᴛʀʏ:.*|' + # Complex metadata
+                r'\s*#\s+IR.*\s*:\s*$|' + # SS example suffix
+                r'\s+#\s*\w+.*\s*\d+[\u2705-\U0001FAFF]+|' + # SS example suffix with checkmark
+                r'\s+#\s*(\S+)\s*\d+[\U0001F600-\U0001F64F\u2705-\u27BF\ufe00-\ufe0f]+.*|' + # #title 5️⃣📥
+                r'\s+.*برای دوستان خود ارسال کنید.*|' + # Farsi call to action
+                r'\s+همراه اول وصله' + # Farsi phrases
+                r'\s+ایران سل وصله' + # Farsi phrases
+                r'\s+اینترنت ایرانسل' + # Farsi phrases
+                r'\s+برای کانفیگ های جدید عضو شوید.*' # Farsi call to action
+                , re.IGNORECASE | re.DOTALL # Match across newlines
+            )
+            
+            # Search for the junk pattern from the *end* of the raw_segment, backwards, or from a known start.
+            # A more robust way: find the first occurrence of junk *after* the protocol prefix
+            # but *before* the next protocol prefix.
+            
+            # Take the current segment and try to cut off junk from its end
+            cleaned_segment = raw_segment
+            junk_match = junk_at_end_pattern.search(raw_segment)
+            if junk_match:
+                cleaned_segment = raw_segment[:junk_match.start()].strip()
+            
+            # Apply protocol-specific cleaning. This step should be very focused on URL structure.
+            if cleaned_segment.startswith("vmess://"):
+                cleaned_segment = ConfigValidator.clean_vmess_config(cleaned_segment)
+            elif cleaned_segment.startswith("hy2://"):
+                cleaned_segment = ConfigValidator.normalize_hysteria2_protocol(cleaned_segment)
             # Add other protocol-specific cleaning here if needed
             
-            # Final check to ensure it still looks like a valid config start after cleaning
-            if final_config_str and ConfigValidator.is_valid_protocol_prefix(final_config_str):
-                extracted_raw_configs.append(final_config_str)
+            if cleaned_segment and ConfigValidator.is_valid_protocol_prefix(cleaned_segment):
+                extracted_raw_configs.append(cleaned_segment)
         
         return extracted_raw_configs
 
