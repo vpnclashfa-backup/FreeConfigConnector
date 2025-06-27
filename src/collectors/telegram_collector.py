@@ -8,7 +8,8 @@ import json
 from datetime import datetime, timedelta, timezone
 import asyncio 
 import traceback
-
+from typing import Optional # NEW: Import Optional type hint
+    
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
@@ -63,7 +64,7 @@ class TelegramCollector:
         clean_username = channel_username.lstrip('@')
         url = f"https://t.me/s/{clean_username}" # Public Telegram Web URL
         print(f"TelegramCollector: Fetching channel page: {url}")
-
+        
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -74,7 +75,7 @@ class TelegramCollector:
             return response.text
         except httpx.TimeoutException:
             print(f"TelegramCollector: Timeout fetching {url}")
-            source_manager.update_telegram_channel_score(channel_username, -settings.COLLECTION_TIMEOUT_SECONDS)
+            source_manager.update_telegram_channel_score(channel_username, -settings.COLLECTION_TIMEOUT_SECONDS) # Decrease score on timeout
             return None
         except httpx.HTTPStatusError as e:
             # Handle 404 (Not Found), 403 (Forbidden), etc.
@@ -126,7 +127,7 @@ class TelegramCollector:
             # If date cannot be extracted, assume it's recent for now or apply a stricter rule.
             # For this implementation, we'll assume it's valid if date is missing.
             return True
-
+        
         # Ensure message_date is timezone-aware
         if message_date.tzinfo is None:
             message_date = message_date.replace(tzinfo=timezone.utc)
@@ -144,7 +145,7 @@ class TelegramCollector:
                 if source_manager.add_telegram_channel(standardized_channel_name):
                     stats_reporter.increment_discovered_channel_count()
                     print(f"TelegramCollector: Discovered and added new channel: {standardized_channel_name}")
-
+        
     async def collect_from_channel(self, channel_username: str) -> List[Dict]:
         """
         Collects config links from a single Telegram channel page (t.me/s/).
@@ -174,7 +175,7 @@ class TelegramCollector:
 
             msg_date = self._extract_date_from_message_html(msg_wrap)
             messages_with_dates.append((msg_date, message_text_div, msg_wrap))
-
+        
         # Sort by date (most recent first)
         messages_with_dates.sort(key=lambda x: x[0] if x[0] else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
 
@@ -184,12 +185,12 @@ class TelegramCollector:
                 # print(f"TelegramCollector: Skipping old message from {channel_username} dated {msg_date}.")
                 continue # Skip messages older than lookback duration
 
-            if processed_message_count >= settings.TELEGRAM_MAX_MESSAGES_PER_CHANNEL:
+            if settings.TELEGRAM_MAX_MESSAGES_PER_CHANNEL is not None and processed_message_count >= settings.TELEGRAM_MAX_MESSAGES_PER_CHANNEL:
                 print(f"TelegramCollector: Max messages per channel limit ({settings.TELEGRAM_MAX_MESSAGES_PER_CHANNEL}) reached for {channel_username}.")
                 break # Stop processing if limit reached
 
             processed_message_count += 1
-
+            
             # Extract text content from various parts of the message HTML
             # This is a simplified approach, a full parser might need to handle nested tags.
             # Find direct text in the message
@@ -220,7 +221,7 @@ class TelegramCollector:
                         await self._discover_and_add_channel(href)
                     elif href.startswith('@'): # Direct @ mention in HTML
                          await self._discover_and_add_channel(href)
-
+                
                 # Forwards are harder to detect purely from t.me/s/ HTML without specific IDs/classes for forwarded messages.
                 # This might require more advanced HTML parsing if Telegram web changes its structure.
                 # The current sample code doesn't directly show a way to detect forwarded channel links easily.
@@ -251,8 +252,15 @@ class TelegramCollector:
         # Process channels in parallel (for efficiency)
         tasks = []
         for channel in active_channels:
+            # Dynamic delay for web sources could be implemented here based on score
+            # For now, relying on httpx timeout and error handling.
+            # Add dynamic sleep based on score if needed, similar to Telethon version.
+            # current_score = source_manager._all_telegram_scores.get(channel, 0)
+            # base_delay = 1 # seconds
+            # delay_multiplier = 1 + max(0, -current_score * 0.05) 
+            # await asyncio.sleep(base_delay * delay_multiplier) 
             tasks.append(self.collect_from_channel(channel))
-
+        
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for i, result in enumerate(results):
@@ -263,7 +271,7 @@ class TelegramCollector:
                 source_manager.update_telegram_channel_score(channel, -15) # Penalize for unhandled errors
             elif result:
                 all_collected_links.extend(result)
-
+        
         # Record newly timed-out channels for the report
         for channel_name, data in source_manager.timeout_telegram_channels.items():
             if channel_name in active_channels and source_manager._is_timed_out_telegram_channel(channel_name):
@@ -276,3 +284,4 @@ class TelegramCollector:
         """Closes the HTTP client session."""
         await self.client.aclose()
         print("TelegramCollector: HTTP client closed.")
+
