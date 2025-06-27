@@ -4,13 +4,13 @@ import os
 import json
 import sys
 from datetime import datetime
-from typing import List, Dict, Optional # Added Optional, List, Dict
+from typing import List, Dict, Optional 
 
 # Import necessary modules
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
-from src.utils.output_manager import output_manager
+from src.utils.output_manager import output_manager # This import is correct and calls save_configs which now handles the new structure
 from src.collectors.telegram_collector import TelegramCollector
 from src.collectors.web_collector import WebCollector
 
@@ -56,25 +56,25 @@ async def main_collector_flow():
         final_unique_links: List[Dict] = list(unique_links.values())
 
         # Save collected links using the OutputManager
-        output_manager.save_configs(final_unique_links)
+        output_manager.save_configs(final_unique_links) # This call now correctly uses the new structure defined in settings and output_manager
 
 
         # Finalize SourceManager (save scores and status)
         source_manager.finalize()
 
         # Generate and print final report
-        # These counts are already handled by stats_reporter.start_report call in __main__
-        stats_reporter.set_unique_collected(len(final_unique_links))
+        initial_telegram_channels_count = len(source_manager.get_active_telegram_channels())
+        initial_websites_count = len(source_manager.get_active_websites())
+        
+        stats_reporter.set_unique_collected(len(final_unique_links)) 
         stats_reporter.end_report() 
         
-        # NEW: Generate Markdown report content
         markdown_report_content = stats_reporter.generate_report(source_manager)
         print("\n" + "-"*50)
         print("Generated Report (Full details in report.md):")
-        print(markdown_report_content) # Also print to console for immediate feedback
+        print(markdown_report_content) 
         print("-" * 50 + "\n")
 
-        # NEW: Save Markdown report to file
         try:
             report_file_path = settings.REPORT_FILE
             os.makedirs(os.path.dirname(report_file_path), exist_ok=True)
@@ -88,11 +88,8 @@ async def main_collector_flow():
 
 
 if __name__ == "__main__":
-    # Ensure source_manager is initialized to get initial counts for stats_reporter
-    # This also loads existing data like timeout lists
-    _ = source_manager # Accessing it ensures it's initialized
+    _ = source_manager 
 
-    # Start the reporting period (before any collection starts)
     initial_telegram_channels_count = len(source_manager.get_active_telegram_channels())
     initial_websites_count = len(source_manager.get_active_websites())
     stats_reporter.start_report(initial_telegram_channels_count, initial_websites_count)
