@@ -101,10 +101,6 @@ class Settings:
         self.FULL_PLAINTEXT_OUTPUT_PATH: str = os.path.join(self.FULL_SUB_DIR_PATH, self.PLAINTEXT_OUTPUT_DIR_NAME)
         self.FULL_BASE64_OUTPUT_PATH: str = os.path.join(self.FULL_SUB_DIR_PATH, self.BASE64_OUTPUT_DIR_NAME)
 
-        # جدید: مسیر فایل‌های اصلی plaintext و base64 (که کل لینک‌ها در آن هستند)
-        self.PLAINTEXT_LINKS_FILE: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.config_data.get('file_paths', {}).get('plaintext_links_file', 'plaintext_links.txt'))
-        self.BASE64_LINKS_FILE: str = os.path.join(self.FULL_BASE64_OUTPUT_PATH, self.config_data.get('file_paths', {}).get('base64_links_file', 'base64_links.txt'))
-        
         # جدید: مسیر فایل mixed (اکنون داخل plaintext و base64)
         self.MIXED_PROTOCOLS_FILE_NAME: str = self.config_data.get('file_paths', {}).get('mixed_links_file', 'mixed_links.txt')
         self.PLAINTEXT_MIXED_FILE: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.MIXED_PROTOCOLS_FILE_NAME)
@@ -120,7 +116,7 @@ class Settings:
         self.PROTOCOLS_FOR_MIXED_OUTPUT: List[str] = self.config_data.get('output_settings', {}).get('protocols_for_mixed_output', [])
         self.OUTPUT_HEADER_BASE64_ENABLED: bool = self.config_data.get('output_settings', {}).get('output_header_base64_enabled', True)
         self.GENERATE_PROTOCOL_SPECIFIC_FILES: bool = self.config_data.get('output_settings', {}).get('generate_protocol_specific_files', True)
-        self.GENERATE_MIXED_PROTOCOL_FILE: bool = self.config_data.get('output_settings', {}).get('generate_mixed_protocol_file', True) # NEW: Read this setting
+        self.GENERATE_MIXED_PROTOCOL_FILE: bool = self.config_data.get('output_settings', {}).get('generate_mixed_protocol_file', True)
 
 
         # مسیر فایل گزارش
