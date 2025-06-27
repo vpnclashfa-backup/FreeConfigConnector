@@ -4,7 +4,7 @@ import os
 import json
 from src.utils.settings_manager import settings
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Set # Added List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set
 
 class SourceManager:
     def __init__(self):
@@ -202,20 +202,22 @@ class SourceManager:
         return sorted_websites
 
     def get_timed_out_telegram_channels(self) -> List[Dict]:
-        """Returns a list of Telegram channels currently in timeout state, sorted by score (lowest first)."""
+        """Returns a list of Telegram channels currently in timeout state, sorted by score (highest first, i.e., least negative)."""
         timeout_list: List[Dict] = []
         for channel, data in self.timeout_telegram_channels.items():
             timeout_list.append({"channel": channel, "score": data.get("score", 0), "last_timeout": data.get("last_timeout")})
         
-        return sorted(timeout_list, key=lambda item: item["score"])
+        # NEW: Sort by score in descending order (highest score first, which means least negative)
+        return sorted(timeout_list, key=lambda item: item["score"], reverse=True)
 
     def get_timed_out_websites(self) -> List[Dict]:
-        """Returns a list of websites currently in timeout state, sorted by score (lowest first)."""
+        """Returns a list of websites currently in timeout state, sorted by score (highest first, i.e., least negative)."""
         timeout_list: List[Dict] = []
         for website, data in self.timeout_websites.items():
             timeout_list.append({"website": website, "score": data.get("score", 0), "last_timeout": data.get("last_timeout")})
         
-        return sorted(timeout_list, key=lambda item: item["score"])
+        # NEW: Sort by score in descending order (highest score first, which means least negative)
+        return sorted(timeout_list, key=lambda item: item["score"], reverse=True)
 
 
     def _is_blacklisted_telegram_channel(self, channel_username: str) -> bool:
