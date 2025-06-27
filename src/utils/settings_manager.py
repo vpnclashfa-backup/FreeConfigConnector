@@ -45,16 +45,30 @@ class Settings:
         max_msg_per_channel = self.config_data.get('collection_settings', {}).get('telegram_max_messages_per_channel', 500)
         self.TELEGRAM_MAX_MESSAGES_PER_CHANNEL = None if max_msg_per_channel == "None" else max_msg_per_channel
 
-        # --- جدید: تنظیمات تایم‌اوت ---
         self.COLLECTION_TIMEOUT_SECONDS = self.config_data.get('collection_settings', {}).get('collection_timeout_seconds', 15)
 
 
-        # Parser Settings --- جدید: تنظیمات پارسر ---
+        # Parser Settings
         self.ENABLE_BASE64_DECODING = self.config_data.get('parser_settings', {}).get('enable_base64_decoding', True)
         self.ENABLE_CLASH_PARSER = self.config_data.get('parser_settings', {}).get('enable_clash_parser', True)
         self.ENABLE_SINGBOX_PARSER = self.config_data.get('parser_settings', {}).get('enable_singbox_parser', True)
         self.ENABLE_JSON_PARSER = self.config_data.get('parser_settings', {}).get('enable_json_parser', True)
         self.IGNORE_UNPARSEABLE_CONTENT = self.config_data.get('parser_settings', {}).get('ignore_unparseable_content', False)
+
+
+        # Discovery Settings
+        self.ENABLE_TELEGRAM_CHANNEL_DISCOVERY = self.config_data.get('discovery_settings', {}).get('enable_telegram_channel_discovery', True)
+        self.ENABLE_CONFIG_LINK_DISCOVERY = self.config_data.get('discovery_settings', {}).get('enable_config_link_discovery', True)
+        self.MAX_DISCOVERED_SOURCES_TO_ADD = self.config_data.get('discovery_settings', {}).get('max_discovered_sources_to_add', 50)
+
+
+        # Source Management Settings
+        self.MAX_TIMEOUT_SCORE_TELEGRAM = self.config_data.get('source_management', {}).get('max_timeout_score_telegram', -50)
+        self.MAX_TIMEOUT_SCORE_WEB = self.config_data.get('source_management', {}).get('max_timeout_score_web', -10)
+        self.BLACKLIST_TELEGRAM_CHANNELS = self.config_data.get('source_management', {}).get('blacklist_telegram_channels', [])
+        self.BLACKLIST_WEBSITES = self.config_data.get('source_management', {}).get('blacklist_websites', [])
+        self.WHITELIST_TELEGRAM_CHANNELS = self.config_data.get('source_management', {}).get('whitelist_telegram_channels', [])
+        self.WHITELIST_WEBSITES = self.config_data.get('source_management', {}).get('whitelist_websites', [])
 
 
         # Proxy Limits
@@ -72,5 +86,12 @@ class Settings:
         self.CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('channels_file', 'channels.txt'))
         self.WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('websites_file', 'websites.txt'))
         self.COLLECTED_LINKS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('collected_links_file', 'collected_links.json'))
+
+        # --- جدید: مسیر فایل‌های کشف شده و تایم‌اوت شده ---
+        self.DISCOVERED_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_telegram_channels_file', 'discovered_telegram_channels.txt'))
+        self.DISCOVERED_WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_websites_file', 'discovered_websites.txt'))
+        self.TIMEOUT_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_telegram_channels_file', 'timeout_telegram_channels.json'))
+        self.TIMEOUT_WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_websites_file', 'timeout_websites.json'))
+
 
 settings = Settings()
