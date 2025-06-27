@@ -30,9 +30,9 @@ class Settings:
             exit(1)
 
     def _set_attributes(self):
-        # Telegram API settings (prioritize environment variables)
-        self.TELEGRAM_API_ID = int(os.environ.get('TELEGRAM_API_ID', self.config_data.get('telegram_api', {}).get('api_id', 0)))
-        self.TELEGRAM_API_HASH = os.environ.get('TELEGRAM_API_HASH', self.config_data.get('telegram_api', {}).get('api_hash', ''))
+        # Telegram API Settings (Removed as per new config, but keeping placeholders if needed)
+        # self.TELEGRAM_API_ID = int(os.environ.get('TELEGRAM_API_ID', self.config_data.get('telegram_api', {}).get('api_id', 0)))
+        # self.TELEGRAM_API_HASH = os.environ.get('TELEGRAM_API_HASH', self.config_data.get('telegram_api', {}).get('api_hash', ''))
 
         # Collection settings
         self.ACTIVE_PROTOCOLS = [
@@ -95,10 +95,22 @@ class Settings:
         self.TIMEOUT_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_telegram_channels_file', 'timeout_telegram_channels.json'))
         self.TIMEOUT_WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_websites_file', 'timeout_websites.json'))
 
-        # --- جدید: مسیرهای خروجی سابسکریپشن ---
+        # --- مسیرهای خروجی سابسکریپشن ---
         self.SUB_DIR_NAME = self.config_data.get('file_paths', {}).get('sub_dir', 'subs')
-        self.BASE64_SUB_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.SUB_DIR_NAME, self.config_data.get('file_paths', {}).get('base64_sub_file', 'base64/base64_links.txt'))
-        self.PLAINTEXT_SUB_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.SUB_DIR_NAME, self.config_data.get('file_paths', {}).get('plaintext_sub_file', 'plaintext/plaintext_links.txt'))
+        # مسیر کامل پوشه subs
+        self.FULL_SUB_DIR_PATH = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.SUB_DIR_NAME)
+
+        self.BASE64_SUB_FILE = os.path.join(self.FULL_SUB_DIR_PATH, self.config_data.get('file_paths', {}).get('base64_sub_file', 'base64/base64_links.txt'))
+        self.PLAINTEXT_SUB_FILE = os.path.join(self.FULL_SUB_DIR_PATH, self.config_data.get('file_paths', {}).get('plaintext_sub_file', 'plaintext/plaintext_links.txt'))
+        self.MIXED_PROTOCOLS_SUB_FILE = os.path.join(self.FULL_SUB_DIR_PATH, self.config_data.get('file_paths', {}).get('mixed_protocols_sub_file', 'mixed/mixed_links.txt'))
+
+
+        # --- تنظیمات خروجی ---
+        self.PROTOCOLS_FOR_MIXED_OUTPUT = [
+            p for p in self.config_data.get('output_settings', {}).get('protocols_for_mixed_output', [])
+            if not p.startswith('_comment_')
+        ]
+        self.OUTPUT_HEADER_BASE64_ENABLED = self.config_data.get('output_settings', {}).get('output_header_base64_enabled', True)
 
 
 settings = Settings()
