@@ -10,6 +10,9 @@ on:
 jobs:
   build-and-run:
     runs-on: ubuntu-latest # استفاده از آخرین رانر اوبونتو برای اجرای Job
+    
+    permissions:
+      contents: write # اعطای دسترسی نوشتن به GITHUB_TOKEN برای Push کردن تغییرات
 
     env:
       TZ: Asia/Tehran # تنظیم منطقه زمانی برای Job، که بر زمان‌بندی cron و timestamp های اسکریپت تأثیر می‌گذارد
@@ -36,8 +39,21 @@ jobs:
           mkdir -p output/subs/protocols # ایجاد پوشه جدید برای پروتکل‌های جداگانه
 
       - name: Run the Config Collector # اجرای اسکریپت اصلی پایتون شما
-        # NEW: Add the current directory to PYTHONPATH so Python can find modules like 'src.utils.settings_manager'
-        # جدید: دایرکتوری فعلی را به PYTHONPATH اضافه می‌کند تا پایتون بتواند ماژول‌هایی مانند 'src.utils.settings_manager' را پیدا کند.
+        # افزودن دایرکتوری فعلی به PYTHONPATH برای یافتن ماژول‌ها
         run: |
-          export PYTHONPATH=$PWD:$PYTHONPATH # Add current working directory to Python path
-          python main.py # Execute the main script
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          python main.py
+
+      # جدید: افزودن مراحل برای کامیت و Push کردن تغییرات به مخزن
+      - name: Configure Git # پیکربندی Git با نام کاربری و ایمیل (نام عمومی)
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+      - name: Add and Commit changes # اضافه کردن، کامیت کردن و Push کردن فایل‌های تولید شده
+        run: |
+          git add output/subs/ # اضافه کردن کل پوشه subs
+          git add output/report.md # NEW: اضافه کردن فایل گزارش report.md
+          
+          git commit -m "Auto: Update collected configs and report" || echo "No changes to commit"
+          git push
