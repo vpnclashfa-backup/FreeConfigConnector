@@ -4,7 +4,7 @@ import os
 import json
 import sys
 from datetime import datetime
-from typing import List, Dict, Optional # Import Optional
+from typing import List, Dict, Optional # Added Optional, List, Dict
 
 # Import necessary modules
 from src.utils.settings_manager import settings
@@ -40,7 +40,7 @@ async def main_collector_flow():
     except Exception as e:
         print(f"Main: An unhandled error occurred during collection process: {e}")
         import traceback
-        traceback.print_exc() # Print full traceback for unexpected errors
+        traceback.print_exc()
     finally:
         # Ensure all collectors are properly closed
         if telegram_collector:
@@ -64,7 +64,7 @@ async def main_collector_flow():
 
         # Generate and print final report
         # These counts are already handled by stats_reporter.start_report call in __main__
-        # stats_reporter.set_unique_collected(len(final_unique_links)) # This is set before in __main__ after deduplication
+        stats_reporter.set_unique_collected(len(final_unique_links))
         stats_reporter.end_report() 
         
         # NEW: Generate Markdown report content
@@ -97,19 +97,12 @@ if __name__ == "__main__":
     initial_websites_count = len(source_manager.get_active_websites())
     stats_reporter.start_report(initial_telegram_channels_count, initial_websites_count)
     
-    # Set unique collected count early, so if an error occurs later, it's reflected in the report
-    # This might be slightly less accurate if deduplication happens *after* an error,
-    # but it ensures the report is populated. The final unique count is set in finally block.
-    # stats_reporter.set_unique_collected(0) # Will be updated in finally block
-
     try:
         asyncio.run(main_collector_flow())
     except KeyboardInterrupt:
         print("\nMain: Program interrupted by user (Ctrl+C). Exiting gracefully.")
-        # Ensure finalize and report are still run even on interrupt
         source_manager.finalize()
         stats_reporter.end_report()
-        # Re-generate report to ensure it has latest state after interrupt
         markdown_report_content = stats_reporter.generate_report(source_manager)
         report_file_path = settings.REPORT_FILE
         os.makedirs(os.path.dirname(report_file_path), exist_ok=True)
@@ -121,7 +114,6 @@ if __name__ == "__main__":
         print(f"Main: A critical error occurred in main execution: {e}")
         import traceback
         traceback.print_exc()
-        # Attempt to save report even on critical error
         source_manager.finalize()
         stats_reporter.end_report()
         markdown_report_content = stats_reporter.generate_report(source_manager)
@@ -131,5 +123,4 @@ if __name__ == "__main__":
             f.write(markdown_report_content)
         print(f"Main: Collection report saved to: {report_file_path} (on critical error)")
         print("--- ConfigConnector Process Completed (with Critical Error) ---")
-        sys.exit(1) # Exit with an error code
-
+        sys.exit(1)
