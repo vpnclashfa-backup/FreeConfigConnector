@@ -83,7 +83,8 @@
     "sub_dir": "subs",
     "base64_sub_file": "base64/base64_links.txt",
     "plaintext_sub_file": "plaintext/plaintext_links.txt",
-    "mixed_protocols_sub_file": "mixed/mixed_links.txt"
+    "mixed_protocols_sub_file": "mixed/mixed_links.txt",
+    "report_file": "report.md"
   },
 
   "output_settings": {
