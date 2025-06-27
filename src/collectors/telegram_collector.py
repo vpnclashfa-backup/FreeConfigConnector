@@ -8,51 +8,26 @@ import json
 from datetime import datetime, timedelta, timezone
 import asyncio 
 import traceback
-from typing import Optional, List, Dict # Added Optional, List, Dict
+from typing import Optional, List, Dict 
 
+# Import necessary modules from utils
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
+# NEW: Import from centralized protocol definitions and validator
+from src.utils.protocol_definitions import get_protocol_regex_patterns, get_combined_protocol_regex
+from src.utils.config_validator import ConfigValidator 
 
-# این تابع الگوهای RegEx را برای پروتکل‌های مختلف VPN/پروکسی تعریف می‌کند.
-def get_config_regex_patterns() -> Dict[str, str]:
-    patterns: Dict[str, str] = {}
-    base_pattern_suffix = r"[^\s\<\>\[\]\{\}\(\)\"\'\`]+"
-
-    protocol_regex_map: Dict[str, str] = {
-        "http": r"https?:\/\/" + base_pattern_suffix,
-        "socks5": r"socks5:\/\/" + base_pattern_suffix,
-        "ss": r"ss:\/\/[a-zA-Z0-9\+\/=]{20,}(?:@[a-zA-Z0-9\.\-]+:\d{1,5})?(?:#.*)?",
-        "ssr": r"ssr:\/\/[a-zA-Z0-9\+\/=]{20,}(?:@[a-zA-Z0-9\.\-]+:\d{1,5})?(?:#.*)?",
-        "vmess": r"vmess:\/\/[a-zA-Z0-9\+\/=]+",
-        "vless": r"vless:\/\/" + base_pattern_suffix,
-        "trojan": r"trojan:\/\/" + base_pattern_suffix,
-        "reality": r"vless:\/\/[^\s\<\>\[\]\{\}\(\)\"\'\`]+?(?:type=reality&.*?host=[^\s&]+.*?sni=[^\s&]+.*?fingerprint=[^\s&]+.*?)?",
-        "hysteria": r"hysteria:\/\/" + base_pattern_suffix,
-        "hysteria2": r"hysteria2:\/\/" + base_pattern_suffix,
-        "tuic": r"tuic:\/\/" + base_pattern_suffix,
-        "wireguard": r"wg:\/\/" + base_pattern_suffix,
-        "ssh": r"(?:ssh|sftp):\/\/" + base_pattern_suffix,
-        "warp": r"(?:warp|cloudflare-warp):\/\/" + base_pattern_suffix,
-        "juicity": r"juicity:\/\/" + base_pattern_suffix,
-        "mieru": r"mieru:\/\/" + base_pattern_suffix,
-        "snell": r"snell:\/\/" + base_pattern_suffix,
-        "anytls": r"anytls:\/\/" + base_pattern_suffix,
-    }
-
-    for protocol in settings.ACTIVE_PROTOCOLS:
-        if protocol in protocol_regex_map:
-            patterns[protocol] = protocol_regex_map[protocol]
-        else:
-            print(f"Warning: No specific regex pattern defined for protocol '{protocol}'. Using generic link pattern.")
-            patterns[protocol] = r"\b" + re.escape(protocol) + r":\/\/" + base_pattern_suffix
-
-    return patterns
 
 class TelegramCollector:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=settings.COLLECTION_TIMEOUT_SECONDS)
-        self.config_patterns = get_config_regex_patterns()
+        # NEW: Use get_protocol_regex_patterns from protocol_definitions
+        self.protocol_regex_patterns_map = get_protocol_regex_patterns()
+        # NEW: Use the combined regex for splitting from protocol_definitions
+        self.combined_protocol_regex = get_combined_protocol_regex()
+        # NEW: Instantiate ConfigValidator
+        self.config_validator = ConfigValidator()
         print("TelegramCollector: Initialized for Telegram Web (t.me/s/) collection.")
 
     async def _fetch_channel_page(self, channel_username: str) -> Optional[str]:
@@ -93,16 +68,7 @@ class TelegramCollector:
             source_manager.update_telegram_channel_score(channel_username, -25)
             return None
 
-    def _extract_links_from_text(self, text_content: str) -> List[Dict]:
-        """
-        Extracts config links from a given text content using defined regex patterns.
-        """
-        found_links: List[Dict] = []
-        for protocol, pattern in self.config_patterns.items():
-            matches = re.findall(pattern, text_content, re.IGNORECASE)
-            for link in matches:
-                found_links.append({'protocol': protocol, 'link': link.strip()})
-        return found_links
+    # OLD _extract_links_from_text method removed. Will use a more robust parsing approach below.
 
     def _extract_date_from_message_html(self, message_soup_tag: BeautifulSoup) -> Optional[datetime]:
         """Extracts datetime from a BeautifulSoup message tag."""
@@ -155,7 +121,7 @@ class TelegramCollector:
             source_manager.update_telegram_channel_score(channel_username, -1)
             return []
 
-        messages_with_dates: List[tuple[Optional[datetime], BeautifulSoup, BeautifulSoup]] = [] # Explicitly typed
+        messages_with_dates: List[Tuple[Optional[datetime], BeautifulSoup, BeautifulSoup]] = [] # Explicitly typed
         for msg_wrap in messages_html:
             message_text_div = msg_wrap.find('div', class_='tgme_widget_message_text')
             if not message_text_div: continue
@@ -176,22 +142,26 @@ class TelegramCollector:
 
             processed_message_count += 1
             
-            main_text = message_text_div.get_text(separator=' ', strip=True)
-            links_from_full_text = self._extract_links_from_text(main_text)
-            collected_links.extend(links_from_full_text)
+            # Combine all relevant text from different parts of the message
+            all_message_text = message_text_div.get_text(separator=' ', strip=True)
 
-            code_blocks = message_text_div.find_all(['pre', 'code'])
-            for block in code_blocks:
-                block_text = block.get_text(separator=' ', strip=True)
-                extracted_from_block = self._extract_links_from_text(block_text)
-                collected_links.extend(extracted_from_block)
+            # NEW: Use ConfigValidator's split method to extract config candidates from the combined text
+            config_candidates = self.config_validator.split_configs_from_text(all_message_text, self.combined_protocol_regex)
 
-            quotes = message_text_div.find_all('blockquote')
-            for quote_tag in quotes:
-                quote_text = quote_tag.get_text(separator=' ', strip=True)
-                extracted_from_quote = self._extract_links_from_text(quote_text)
-                collected_links.extend(extracted_from_quote)
+            for candidate_link_str in config_candidates:
+                # Try to find which protocol this candidate belongs to and validate it
+                for protocol_name, pattern_str in self.protocol_regex_patterns_map.items():
+                    if re.match(pattern_str, candidate_link_str, re.IGNORECASE):
+                        # Validate the extracted config with the validator's specific protocol validation
+                        if self.config_validator.validate_protocol_config(candidate_link_str, protocol_name):
+                            collected_links.append({'protocol': protocol_name, 'link': candidate_link_str})
+                            stats_reporter.increment_total_collected()
+                            stats_reporter.increment_protocol_count(protocol_name)
+                            stats_reporter.record_source_link("telegram", channel_username, protocol_name)
+                        break # Move to next candidate once a protocol is found and processed for it
 
+
+            # --- Discovering new channels from message HTML ---
             if settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY:
                 for a_tag in message_text_div.find_all('a', href=True):
                     href = a_tag['href']
@@ -235,8 +205,10 @@ class TelegramCollector:
             elif result:
                 all_collected_links.extend(result)
         
-        for channel_name in list(source_manager.timeout_telegram_channels.keys()): # Iterate over a copy to avoid RuntimeError
-            if channel_name in active_channels and source_manager._is_timed_out_telegram_channel(channel_name):
+        for channel_name in list(source_manager.timeout_telegram_channels.keys()):
+            # Check if this channel was processed and is now timed out in source_manager's internal score
+            # and was one of the initially active channels
+            if channel_name in active_channels and source_manager._all_telegram_scores.get(channel_name, 0) <= settings.MAX_TIMEOUT_SCORE_TELEGRAM:
                 stats_reporter.add_newly_timed_out_channel(channel_name)
 
         print(f"TelegramCollector: Finished collection. Total links from Telegram: {len(all_collected_links)}")
