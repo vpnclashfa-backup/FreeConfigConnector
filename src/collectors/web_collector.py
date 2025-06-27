@@ -6,7 +6,7 @@ import os
 import json
 import asyncio
 import traceback
-from typing import Optional, List, Dict # NEW: Import Optional, List, Dict for type hints
+from typing import Optional, List, Dict # CORRECT: Optional, List, Dict are imported
     
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
@@ -81,7 +81,7 @@ class WebCollector:
         """
         processed_url = self._get_raw_github_url(url)
         content = await self._fetch_url_content(processed_url)
-        collected_links = []
+        collected_links: List[Dict] = []
 
         if not content:
             print(f"WebCollector: No content fetched for {url}. Skipping parsing.")
@@ -129,7 +129,7 @@ class WebCollector:
 
     async def collect_from_websites(self) -> List[Dict]:
         """Main method to collect from all active websites."""
-        all_collected_links = []
+        all_collected_links: List[Dict] = []
         active_websites = source_manager.get_active_websites() # Get active and sorted websites
         print(f"\nWebCollector: Starting collection from {len(active_websites)} active websites.")
 
@@ -140,12 +140,6 @@ class WebCollector:
         # Process websites in parallel
         tasks = []
         for url in active_websites:
-            # Dynamic delay for web sources could be implemented here based on score
-            # For now, relying on httpx timeout and error handling.
-            # current_score = source_manager._all_website_scores.get(url, 0)
-            # base_delay = 0.5 # seconds, smaller for web generally
-            # delay_multiplier = 1 + max(0, -current_score * 0.1) # Potentially higher impact for web
-            # await asyncio.sleep(base_delay * delay_multiplier)
             tasks.append(self.collect_from_website(url))
         
         results = await asyncio.gather(*tasks, return_exceptions=True)
