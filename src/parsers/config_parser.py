@@ -4,13 +4,13 @@ import base64
 import json
 import re
 import yaml # pip install PyYAML
-from typing import List, Dict, Optional, Tuple # Ensure Tuple is imported
+from typing import List, Dict, Optional, Tuple
 
-# Import from centralized protocol definitions and ConfigValidator
+# وارد کردن تعاریف پروتکل مرکزی و ConfigValidator
 from src.utils.protocol_definitions import get_protocol_regex_patterns, get_combined_protocol_regex
 from src.utils.config_validator import ConfigValidator 
 
-# Re-using settings directly from utils
+# استفاده مستقیم از تنظیمات از utils
 from src.utils.settings_manager import settings
 
 
@@ -19,7 +19,7 @@ class ConfigParser:
         self.protocol_regex_patterns_map = get_protocol_regex_patterns()
         self.config_validator = ConfigValidator()
         
-        # Compile patterns for efficiency (for searching within text)
+        # کامپایل کردن الگوها برای کارایی بیشتر (جهت جستجو در متن)
         self.compiled_patterns = {
             p: re.compile(pattern, re.IGNORECASE) 
             for p, pattern in self.protocol_regex_patterns_map.items()
@@ -27,64 +27,64 @@ class ConfigParser:
         
         self.combined_protocol_regex = get_combined_protocol_regex()
 
-        # Ordered list of protocol names for prioritized matching.
-        # Reality should be checked before generic VLESS.
-        # This list determines the order of checking for a protocol match.
-        self.ordered_protocols_for_matching = [
-            "reality", # Check Reality first as it's a VLESS variant with specific parameters
+        # لیست مرتب شده از نام پروتکل‌ها برای تطبیق اولویت‌دار.
+        # Reality باید قبل از VLESS عمومی بررسی شود.
+        self.ordered_protocols_for_matching: List[str] = [
+            "reality", # Reality را ابتدا بررسی کن زیرا یک نوع VLESS با پارامترهای خاص است
             "vmess", "vless", "trojan", "ss", "ssr", "hysteria", "hysteria2",
             "tuic", "wireguard", "ssh", "warp", "juicity", "http", "https", "socks5",
             "mieru", "snell", "anytls"
-            # Ensure this list covers all active_protocols from settings
-            # The order here is crucial for accurate classification (more specific first)
+            # اطمینان حاصل شود که این لیست تمامی active_protocols از تنظیمات را پوشش می‌دهد
+            # ترتیب در اینجا برای طبقه‌بندی دقیق (خاص‌ترها اول) حیاتی است
         ]
 
 
     def _extract_direct_links(self, text_content: str) -> List[Dict]:
         """
-        Extracts direct protocol links from any given text.
-        This function uses ConfigValidator.split_configs_from_text
-        to first break down the text into valid config-like strings.
+        لینک‌های پروتکل مستقیم را از هر محتوای متنی استخراج می‌کند.
+        این تابع اکنون از ConfigValidator.split_configs_from_text
+        برای تقسیم متن به رشته‌های کانفیگ‌مانند معتبر استفاده می‌کند.
         """
         found_links: List[Dict] = []
         
-        # Use the validator's split method to get potential clean config strings
+        # از متد تقسیم‌بندی اعتبارسنج برای به دست آوردن قطعات کانفیگ تمیز احتمالی استفاده کن
         config_candidates = self.config_validator.split_configs_from_text(text_content, self.combined_protocol_regex)
 
         for candidate in config_candidates:
-            # Iterate through ordered protocols for prioritized matching
+            # از طریق پروتکل‌های مرتب شده برای تطبیق اولویت‌دار تکرار کن
             for protocol_name in self.ordered_protocols_for_matching:
-                # Check if the candidate matches the pattern for this protocol AND is active
-                if protocol_name in self.protocol_regex_patterns_map: # Check if this protocol is enabled in settings
+                # بررسی کن که آیا کاندیدا با الگوی این پروتکل تطابق دارد و فعال است
+                if protocol_name in self.protocol_regex_patterns_map: # بررسی کن آیا این پروتکل در تنظیمات فعال است
                     compiled_pattern = self.compiled_patterns[protocol_name]
-                    if compiled_pattern.match(candidate): # Use match() to check from start of string
-                        # Validate the extracted config with the validator's specific protocol validation
-                        # Pass the protocol name (e.g., 'vmess') not the full 'vmess://'
+                    # از match() استفاده کن تا بررسی کنی آیا کاندیدا با الگو از ابتدا تطابق دارد
+                    if compiled_pattern.match(candidate): 
+                        # اعتبارسنجی عمیق‌تر کانفیگ استخراج شده با اعتبارسنجی پروتکل خاص
+                        # نام پروتکل را (مثلاً 'vmess') نه 'vmess://' کامل را پاس بده
                         if self.config_validator.validate_protocol_config(candidate, protocol_name):
                             found_links.append({'protocol': protocol_name, 'link': candidate})
-                            break # Move to the next candidate once a valid match is found for this chunk
+                            break # به محض پیدا شدن یک تطابق معتبر برای این قطعه، به کاندیدای بعدی برو
             
         return found_links
 
     def _decode_base64(self, content: str) -> Optional[str]:
-        """Attempts to decode base64 content using ConfigValidator's method."""
+        """تلاش می‌کند محتوای base64 را با استفاده از متد ConfigValidator رمزگشایی کند."""
         if not settings.ENABLE_BASE64_DECODING:
             return None
         
         decoded_str = self.config_validator.decode_base64_text(content)
         if decoded_str:
-            # Check if decoded content looks like a list of links or another parsable format
+            # بررسی کن آیا محتوای رمزگشایی شده شبیه لیستی از لینک‌ها یا فرمت قابل پارس دیگری است
             if len(decoded_str) > 10 and (self.combined_protocol_regex.search(decoded_str) or 
                                           self.config_validator.is_valid_protocol_prefix(decoded_str)):
-                print("Successfully decoded Base64 content and it contains potential links.")
+                print("محتوای Base64 با موفقیت رمزگشایی شد و شامل لینک‌های احتمالی است.")
                 return decoded_str
-            print("Base64 decoded, but content does not appear to contain configs or valid protocol links.")
+            print("Base64 رمزگشایی شد، اما محتوا شامل کانفیگ یا لینک پروتکل معتبر نیست.")
             return None
         return None
 
     def _parse_clash_config(self, content: str) -> List[Dict]:
         """
-        Parses Clash YAML configurations to extract proxy links.
+        پیکربندی‌های Clash YAML را برای استخراج لینک‌های پروکسی پارس می‌کند.
         """
         if not settings.ENABLE_CLASH_PARSER:
             return []
@@ -95,49 +95,48 @@ class ConfigParser:
             if not isinstance(clash_data, dict):
                 return []
 
-            # Extract from 'proxies' list
+            # استخراج از لیست 'proxies'
             proxies = clash_data.get('proxies', [])
             for proxy_obj in proxies:
                 if isinstance(proxy_obj, dict):
-                    # Attempt to reconstruct SS/SSR links from dict, then validate
+                    # تلاش برای بازسازی لینک‌های SS/SSR از دیکشنری، سپس اعتبارسنجی
                     if proxy_obj.get('type', '').lower() == 'ss' and all(k in proxy_obj for k in ['cipher', 'password', 'server', 'port']):
                         try:
-                            # Reconstruct a shadowssocks link
                             method_pass = f"{proxy_obj['cipher']}:{proxy_obj['password']}"
                             encoded_method_pass = base64.b64encode(method_pass.encode()).decode()
                             ss_link = f"ss://{encoded_method_pass}@{proxy_obj['server']}:{proxy_obj['port']}"
                             if 'name' in proxy_obj:
                                 ss_link += f"#{proxy_obj['name']}"
                             
-                            if self.config_validator.validate_protocol_config(ss_link, 'ss'): # Pass 'ss' not 'ss://'
+                            if self.config_validator.validate_protocol_config(ss_link, 'ss'):
                                 extracted_links.append({'protocol': 'ss', 'link': ss_link})
                         except Exception as e:
-                            print(f"Error reconstructing SS link from Clash: {e}")
+                            print(f"خطا در بازسازی لینک SS از Clash: {e}")
                     
-                    # For other types (vmess, vless, trojan), they are often direct links or complex.
-                    # We rely on searching the JSON string representation for direct protocol links.
+                    # برای انواع دیگر (vmess, vless, trojan)، آن‌ها اغلب لینک‌های مستقیم یا پیچیده هستند.
+                    # ما برای یافتن لینک‌های پروتکل مستقیم به جستجو در نمایش رشته JSON تکیه می‌کنیم.
                     proxy_str_representation = json.dumps(proxy_obj)
                     extracted_links.extend(self._extract_direct_links(proxy_str_representation))
 
 
-            # Extract from 'proxy-providers' (URLs pointing to subscriptions)
+            # استخراج از 'proxy-providers' (URLهایی که به اشتراک‌ها اشاره می‌کنند)
             proxy_providers = clash_data.get('proxy-providers', {})
             for provider_name, provider_obj in proxy_providers.items():
                 if isinstance(provider_obj, dict) and 'url' in provider_obj:
-                    # Check if the URL is a valid http/https URL and add as a subscription source
+                    # بررسی کن که URL یک URL http/https معتبر است و به عنوان یک منبع اشتراک اضافه کن
                     if provider_obj['url'].startswith('http://') or provider_obj['url'].startswith('https://'):
                         extracted_links.append({'protocol': 'subscription', 'link': provider_obj['url']})
             
-            print("Successfully parsed Clash config and extracted potential links.")
+            print("پیکربندی Clash با موفقیت پارس شد و لینک‌های احتمالی استخراج شدند.")
         except yaml.YAMLError:
-            pass # Not a valid YAML (Clash) config
+            pass # پیکربندی YAML (Clash) معتبر نیست
         except Exception as e:
-            print(f"Error parsing Clash config: {e}")
+            print(f"خطا در پارس کردن پیکربندی Clash: {e}")
         return extracted_links
 
     def _parse_singbox_config(self, content: str) -> List[Dict]:
         """
-        Parses SingBox JSON configurations to extract proxy links/outbounds.
+        پیکربندی‌های SingBox JSON را برای استخراج لینک‌های پروکسی/outbounds پارس می‌کند.
         """
         if not settings.ENABLE_SINGBOX_PARSER:
             return []
@@ -151,20 +150,20 @@ class ConfigParser:
             outbounds = singbox_data.get('outbounds', [])
             for outbound_obj in outbounds:
                 if isinstance(outbound_obj, dict):
-                    # Convert outbound object to string to search for links like vmess://, vless://
+                    # تبدیل شیء outbound به رشته برای جستجوی لینک‌هایی مانند vmess://, vless://
                     outbound_str = json.dumps(outbound_obj)
                     extracted_links.extend(self._extract_direct_links(outbound_str))
                         
-            print("Successfully parsed SingBox config and extracted potential links.")
+            print("پیکربندی SingBox با موفقیت پارس شد و لینک‌های احتمالی استخراج شدند.")
         except json.JSONDecodeError:
-            pass
+            pass # پیکربندی JSON (SingBox) معتبر نیست
         except Exception as e:
-            print(f"Error parsing SingBox config: {e}")
+            print(f"خطا در پارس کردن پیکربندی SingBox: {e}")
         return extracted_links
 
     def _parse_json_content(self, content: str) -> List[Dict]:
         """
-        Parses general JSON content to find any embedded config links or subscription URLs.
+        محتوای JSON عمومی را برای یافتن هر لینک کانفیگ جاسازی شده یا URL اشتراک پارس می‌کند.
         """
         if not settings.ENABLE_JSON_PARSER:
             return []
@@ -174,49 +173,49 @@ class ConfigParser:
             json_data = json.loads(content)
             json_string = json.dumps(json_data)
             extracted_links.extend(self._extract_direct_links(json_string))
-            print("Successfully parsed general JSON content and extracted potential links.")
+            print("محتوای JSON عمومی با موفقیت پارس شد و لینک‌های احتمالی استخراج شدند.")
         except json.JSONDecodeError:
-            pass
+            pass # JSON معتبر نیست
         except Exception as e:
-            print(f"Error parsing general JSON content: {e}")
+            print(f"خطا در پارس کردن محتوای JSON عمومی: {e}")
         return extracted_links
 
 
     def parse_content(self, content: str) -> List[Dict]:
         """
-        Attempts to parse the given content and extract config links using various methods.
-        Returns a list of {'protocol': '...', 'link': '...'} dictionaries.
+        تلاش می‌کند محتوای داده شده را پارس کرده و لینک‌های کانفیگ را با استفاده از روش‌های مختلف استخراج کند.
+        لیستی از دیکشنری‌های {'protocol': '...', 'link': '...'} را برمی‌گرداند.
         """
         all_extracted_links: List[Dict] = []
         
-        # 1. Try to extract direct links first from the raw content
+        # ۱. ابتدا لینک‌های مستقیم را از محتوای خام استخراج کن
         direct_links = self._extract_direct_links(content)
         all_extracted_links.extend(direct_links)
         
-        # 2. Try Base64 decoding and then parse the decoded content
+        # ۲. رمزگشایی Base64 و سپس پارس کردن محتوای رمزگشایی شده
         decoded_content = self._decode_base64(content)
         if decoded_content:
-            # First, extract direct links from decoded content
+            # ابتدا، لینک‌های مستقیم را از محتوای رمزگشایی شده استخراج کن
             base64_links = self._extract_direct_links(decoded_content)
             all_extracted_links.extend(base64_links)
             
-            # Then, try to parse decoded content as Clash/SingBox/general JSON
+            # سپس، تلاش کن محتوای رمزگشایی شده را به عنوان Clash/SingBox/JSON عمومی پارس کنی
             all_extracted_links.extend(self._parse_clash_config(decoded_content))
             all_extracted_links.extend(self._parse_singbox_config(decoded_content))
             all_extracted_links.extend(self._parse_json_content(decoded_content))
 
 
-        # 3. Try Clash (YAML) parsing from raw content
+        # ۳. پارس کردن Clash (YAML) از محتوای خام
         clash_links = self._parse_clash_config(content)
         all_extracted_links.extend(clash_links)
 
-        # 4. Try SingBox (JSON) parsing from raw content
+        # ۴. پارس کردن SingBox (JSON) از محتوای خام
         singbox_links = self._parse_singbox_config(content)
         all_extracted_links.extend(singbox_links)
 
-        # 5. Try general JSON parsing from raw content
+        # ۵. پارس کردن JSON عمومی از محتوای خام
         json_links = self._parse_json_content(content)
         all_extracted_links.extend(json_links)
         
-        # Deduplicate extracted links before returning
+        # حذف لینک‌های تکراری قبل از بازگشت
         return list({link['link']: link for link in all_extracted_links}.values())
