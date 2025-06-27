@@ -1,57 +1,69 @@
-name: Run Config Collector # نام این Workflow در GitHub UI
+name: Run Config Collector # نام Workflow که در GitHub UI نمایش داده می‌شود (بدون تغییر)
 
 on:
-  workflow_dispatch: # اجازه اجرای دستی
-  # schedule: # زمان‌بندی اجرای خودکار (همچنان غیرفعال است)
-  #   - cron: '0 */6 * * *' # هر 6 ساعت یک بار
-  #     env:
-  #       TZ: Asia/Tehran # منطقه زمانی برای زمان‌بندی
+  workflow_dispatch: # رویداد: اجازه اجرای دستی از رابط کاربری GitHub را می‌دهد
+  # schedule: # رویداد: زمان‌بندی اجرای خودکار (در حال حاضر کامنت شده و غیرفعال است)
+  #   - cron: '0 */6 * * *' # هر 6 ساعت یک بار اجرا می‌شود (در دقیقه 0 بعد از هر 6 ساعت)
+  #     # مثال: 00:00, 06:00, 12:00, 18:00 (به وقت UTC)
+  #     # برای فعال‌سازی، کاراکتر '#' را از ابتدای 'schedule:' و خط پایین آن حذف کنید.
 
 jobs:
   build-and-run:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # استفاده از آخرین رانر اوبونتو برای اجرای Job
+    
     permissions:
-      contents: write # برای Push کردن تغییرات لازم است
+      contents: write # اعطای دسترسی نوشتن به GITHUB_TOKEN برای Push کردن تغییرات
 
     env:
-      TZ: Asia/Tehran # منطقه زمانی برای Job
+      TZ: Asia/Tehran # تنظیم منطقه زمانی برای Job، که بر زمان‌بندی cron و timestamp های اسکریپت تأثیر می‌گذارد
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository # دریافت کد شما از مخزن GitHub
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python # تنظیم محیط پایتون
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # یا '3.11' یا '3.12'
+          python-version: '3.9' # یا '3.10', '3.11', '3.12' - نسخه پایتون مورد نظر خود را انتخاب کنید
+          # توصیه می‌شود از نسخه‌های جدیدتر پایتون مانند '3.11' یا '3.12' استفاده کنید.
 
-      - name: Install dependencies
+      - name: Install dependencies # نصب کتابخانه‌های پایتون از requirements.txt
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Create output directories
+      - name: Create output directories # اطمینان از وجود تمام پوشه‌های خروجی لازم برای ساختار جدید
+        # این مرحله صرفاً برای ایجاد پوشه‌ها قبل از اجرای اسکریپت اصلی است.
+        # OutputManager در پایتون نیز این پوشه‌ها را ایجاد می‌کند.
         run: |
-          mkdir -p output/subs/plaintext/protocols
-          mkdir -p output/subs/base64/protocols
-          mkdir -p output/ # برای report.md و timeout files
+          mkdir -p output/subs/plaintext/protocols # ایجاد plaintext/ و plaintext/protocols/
+          mkdir -p output/subs/base64/protocols # ایجاد base64/ و base64/protocols/
+          mkdir -p output/ # اطمینان از وجود پوشه output برای report.md و timeout files
 
-      - name: Run the Config Collector
+      - name: Run the Config Collector # اجرای اسکریپت اصلی پایتون شما
+        # افزودن دایرکتوری فعلی به PYTHONPATH برای یافتن ماژول‌ها
         run: |
-          export PYTHONPATH=$PWD:$PYTHONPATH
-          python main.py
+          export PYTHONPATH=$PWD:$PYTHONPATH # Add current working directory to Python path
+          python main.py # Execute the main script
 
-      - name: Configure Git
+      # NEW: Add steps to commit and push changes to the repository
+      - name: Configure Git # پیکربندی Git با نام کاربری و ایمیل (نام عمومی)
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
           
-      - name: Add and Commit changes
+      - name: Add and Commit changes # اضافه کردن، کامیت کردن و Push کردن فایل‌های تولید شده
         run: |
+          # اضافه کردن کل پوشه 'subs' که شامل تمامی خروجی‌های کانفیگ است.
+          # این شامل plaintext/, base64/ و محتویات داخل آن‌ها می‌شود.
           git add output/subs/
+          # اضافه کردن فایل گزارش Markdown
           git add output/report.md
+          
+          # اضافه کردن فایل‌های timeout (JSON) برای مشاهده وضعیت امتیازات
           git add output/timeout_telegram_channels.json
           git add output/timeout_websites.json
           
+          # ایجاد یک commit؛ اگر تغییری نباشد، پیام "No changes to commit" را چاپ می‌کند و Job را با موفقیت ادامه می‌دهد.
           git commit -m "Auto: Update collected configs, report, and timeout stats" || echo "No changes to commit"
           git push
