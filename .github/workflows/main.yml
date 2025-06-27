@@ -36,25 +36,8 @@ jobs:
           mkdir -p output/subs/protocols # ایجاد پوشه جدید برای پروتکل‌های جداگانه
 
       - name: Run the Config Collector # اجرای اسکریپت اصلی پایتون شما
-        run: python main.py
-
-      - name: Upload collected configs as artifact # آپلود فایل‌های خروجی به عنوان Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: collected-configs-${{ github.run_id }} # نام Artifact
-          path: output/subs/ # آپلود کل دایرکتوری 'subs' که شامل تمامی خروجی‌هاست
-
-      # می‌توانید Artifacts اضافی را برای سایر فایل‌های خروجی مانند collected_links.json یا فایل‌های timeout آپلود کنید
-      # - name: Upload all_collected_links.json
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: all-collected-links-json-${{ github.run_id }}
-      #     path: output/collected_links.json
-
-      # - name: Upload timeout files
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: timeout-files-${{ github.run_id }}
-      #     path: |
-      #       output/timeout_telegram_channels.json
-      #       output/timeout_websites.json
+        # NEW: Add the current directory to PYTHONPATH so Python can find modules like 'src.utils.settings_manager'
+        # جدید: دایرکتوری فعلی را به PYTHONPATH اضافه می‌کند تا پایتون بتواند ماژول‌هایی مانند 'src.utils.settings_manager' را پیدا کند.
+        run: |
+          export PYTHONPATH=$PWD:$PYTHONPATH # Add current working directory to Python path
+          python main.py # Execute the main script
