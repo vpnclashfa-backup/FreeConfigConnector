@@ -3,7 +3,7 @@
 import json
 import os
 from datetime import timedelta
-from typing import Optional, Dict # Added Dict
+from typing import Optional, Dict, List
 
 class Settings:
     def __init__(self, config_file: str = 'settings/config.json'):
@@ -32,10 +32,7 @@ class Settings:
 
     def _set_attributes(self):
         # Collection settings
-        self.ACTIVE_PROTOCOLS: List[str] = [ # Explicitly typed
-            p for p in self.config_data.get('collection_settings', {}).get('active_protocols', [])
-            # if not p.startswith('_comment_') # Removed comments from JSON, so this filter is not strictly needed
-        ]
+        self.ACTIVE_PROTOCOLS: List[str] = self.config_data.get('collection_settings', {}).get('active_protocols', [])
         self.TELEGRAM_MESSAGE_LOOKBACK_DURATION = timedelta(
             days=self.config_data.get('collection_settings', {}).get('telegram_message_lookback_days', 7)
         )
@@ -92,23 +89,39 @@ class Settings:
         self.TIMEOUT_TELEGRAM_CHANNELS_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_telegram_channels_file', 'timeout_telegram_channels.json'))
         self.TIMEOUT_WEBSITES_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_websites_file', 'timeout_websites.json'))
 
-        # مسیرهای خروجی سابسکریپشن
+        # --- مسیرهای خروجی سابسکریپشن ---
         self.SUB_DIR_NAME: str = self.config_data.get('file_paths', {}).get('sub_dir', 'subs')
         self.FULL_SUB_DIR_PATH: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.SUB_DIR_NAME)
 
-        self.BASE64_SUB_FILE: str = os.path.join(self.FULL_SUB_DIR_PATH, self.config_data.get('file_paths', {}).get('base64_sub_file', 'base64/base64_links.txt'))
-        self.PLAINTEXT_SUB_FILE: str = os.path.join(self.FULL_SUB_DIR_PATH, self.config_data.get('file_paths', {}).get('plaintext_sub_file', 'plaintext/plaintext_links.txt'))
-        self.MIXED_PROTOCOLS_SUB_FILE: str = os.path.join(self.FULL_SUB_DIR_PATH, self.config_data.get('file_paths', {}).get('mixed_protocols_sub_file', 'mixed/mixed_links.txt'))
+        # جدید: نام پوشه‌های خروجی plaintext و base64
+        self.PLAINTEXT_OUTPUT_DIR_NAME: str = self.config_data.get('file_paths', {}).get('plaintext_output_dir', 'plaintext')
+        self.BASE64_OUTPUT_DIR_NAME: str = self.config_data.get('file_paths', {}).get('base64_output_dir', 'base64')
+
+        # جدید: مسیرهای کامل پوشه‌های plaintext و base64
+        self.FULL_PLAINTEXT_OUTPUT_PATH: str = os.path.join(self.FULL_SUB_DIR_PATH, self.PLAINTEXT_OUTPUT_DIR_NAME)
+        self.FULL_BASE64_OUTPUT_PATH: str = os.path.join(self.FULL_SUB_DIR_PATH, self.BASE64_OUTPUT_DIR_NAME)
+
+        # جدید: مسیر فایل‌های اصلی plaintext و base64 (که کل لینک‌ها در آن هستند)
+        self.PLAINTEXT_LINKS_FILE: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.config_data.get('file_paths', {}).get('plaintext_links_file', 'plaintext_links.txt'))
+        self.BASE64_LINKS_FILE: str = os.path.join(self.FULL_BASE64_OUTPUT_PATH, self.config_data.get('file_paths', {}).get('base64_links_file', 'base64_links.txt'))
         
+        # جدید: مسیر فایل mixed (اکنون داخل plaintext و base64)
+        self.MIXED_PROTOCOLS_FILE_NAME: str = self.config_data.get('file_paths', {}).get('mixed_links_file', 'mixed_links.txt')
+        self.PLAINTEXT_MIXED_FILE: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.MIXED_PROTOCOLS_FILE_NAME)
+        self.BASE64_MIXED_FILE: str = os.path.join(self.FULL_BASE64_OUTPUT_PATH, self.MIXED_PROTOCOLS_FILE_NAME)
+
+        # جدید: مسیر پوشه پروتکل‌های جداگانه (اکنون داخل plaintext و base64)
+        self.PROTOCOL_SPECIFIC_SUB_DIR_NAME: str = self.config_data.get('file_paths', {}).get('protocol_specific_sub_dir', 'protocols')
+        self.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.PROTOCOL_SPECIFIC_SUB_DIR_NAME)
+        self.FULL_BASE64_PROTOCOL_SPECIFIC_DIR: str = os.path.join(self.FULL_BASE64_OUTPUT_PATH, self.PROTOCOL_SPECIFIC_SUB_DIR_NAME)
+
+
         # تنظیمات خروجی
-        self.PROTOCOLS_FOR_MIXED_OUTPUT: List[str] = [
-            p for p in self.config_data.get('output_settings', {}).get('protocols_for_mixed_output', [])
-            # if not p.startswith('_comment_') # Removed comments from JSON
-        ]
+        self.PROTOCOLS_FOR_MIXED_OUTPUT: List[str] = self.config_data.get('output_settings', {}).get('protocols_for_mixed_output', [])
         self.OUTPUT_HEADER_BASE64_ENABLED: bool = self.config_data.get('output_settings', {}).get('output_header_base64_enabled', True)
         self.GENERATE_PROTOCOL_SPECIFIC_FILES: bool = self.config_data.get('output_settings', {}).get('generate_protocol_specific_files', True)
-        self.PROTOCOL_SPECIFIC_DIR_NAME: str = self.config_data.get('output_settings', {}).get('protocol_specific_dir', 'protocols')
-        self.FULL_PROTOCOL_SPECIFIC_DIR_PATH: str = os.path.join(self.FULL_SUB_DIR_PATH, self.PROTOCOL_SPECIFIC_DIR_NAME)
+        self.GENERATE_MIXED_PROTOCOL_FILE: bool = self.config_data.get('output_settings', {}).get('generate_mixed_protocol_file', True) # NEW: Read this setting
+
 
         # مسیر فایل گزارش
         self.REPORT_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('report_file', 'report.md'))
