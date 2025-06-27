@@ -9,3 +9,10 @@ https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/s
 https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_3.txt
 https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_4.txt
 https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/countries/ir/mixed
+https://raw.githubusercontent.com/maimengmeng/mysub/refs/heads/main/valid_content_all.txt
+https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/juicity
+https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/tuic
+https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/reality
+https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr
+https://raw.githubusercontent.com/hiddify/hiddify-next/refs/heads/main/test.configs/warp
+https://raw.githubusercontent.com/ircfspace/warpsub/refs/heads/main/export/warp
