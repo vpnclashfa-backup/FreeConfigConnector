@@ -52,6 +52,32 @@
     "_comment_": "اگر محتوا قابل پارس کردن نبود، آیا آن را نادیده بگیرد (true) یا یک هشدار ثبت کند (false)؟"
   },
 
+  "discovery_settings": {
+    "_comment_": "تنظیمات مربوط به کشف منابع جدید (کانال‌ها، وب‌سایت‌ها) به صورت پویا.",
+    "enable_telegram_channel_discovery": true,
+    "_comment_": "آیا کانال‌های جدید را از لینک‌ها، تگ‌ها و فورواردها در پیام‌های تلگرام کشف کند؟",
+    "enable_config_link_discovery": true,
+    "_comment_": "آیا لینک کانال‌ها/وب‌سایت‌های جدید را از داخل مشخصات کانفیگ‌ها (مثل نام یا metadata) کشف کند؟",
+    "max_discovered_sources_to_add": 50,
+    "_comment_": "حداکثر تعداد منابع جدید کشف شده (کانال/وب‌سایت) که به لیست منابع اضافه می‌شوند در هر بار اجرا. (0 برای عدم محدودیت)"
+  },
+
+  "source_management": {
+    "_comment_": "تنظیمات مربوط به مدیریت و لیست سیاه/سفید منابع.",
+    "max_timeout_score_telegram": -50,
+    "_comment_": "حداقل امتیاز برای یک کانال تلگرام تا وارد لیست تایم‌اوت شود. (امتیاز کمتر از این، منجر به تایم‌اوت موقت می‌شود).",
+    "max_timeout_score_web": -10,
+    "_comment_": "حداقل امتیاز برای یک وب‌سایت تا وارد لیست تایم‌اوت شود. (امتیاز کمتر از این، منجر به تایم‌اوت موقت می‌شود).",
+    "blacklist_telegram_channels": [],
+    "_comment_": "لیست کانال‌های تلگرامی که هرگز نباید بررسی شوند. (مثال: [\"@badchannel\", \"@spam_channel\"])",
+    "blacklist_websites": [],
+    "_comment_": "لیست وب‌سایت‌هایی که هرگز نباید بررسی شوند. (مثال: [\"https://badsite.com/\"])",
+    "whitelist_telegram_channels": [],
+    "_comment_": "فقط کانال‌های تلگرامی در این لیست بررسی می‌شوند. اگر این لیست خالی باشد، همه کانال‌ها بررسی می‌شوند. (مثال: [\"@my_trusted_channel\"])",
+    "whitelist_websites": [],
+    "_comment_": "فقط وب‌سایت‌های در این لیست بررسی می‌شوند. اگر این لیست خالی باشد، همه وب‌سایت‌ها بررسی می‌شوند."
+  },
+
   "proxy_limits": {
     "_comment_": "محدودیت تعداد پروکسی ها برای ذخیره سازی (برای مراحل بعدی که پروکسی ها ذخیره می شوند).",
     "max_total_proxies": 1000,
@@ -82,6 +108,14 @@
     "output_dir": "output",
     "channels_file": "channels.txt",
     "websites_file": "websites.txt",
-    "collected_links_file": "collected_links.json"
+    "collected_links_file": "collected_links.json",
+    "discovered_telegram_channels_file": "discovered_telegram_channels.txt",
+    "_comment_": "فایلی برای ذخیره کانال‌های تلگرام کشف شده جدید",
+    "discovered_websites_file": "discovered_websites.txt",
+    "_comment_": "فایلی برای ذخیره وب‌سایت‌های کشف شده جدید",
+    "timeout_telegram_channels_file": "timeout_telegram_channels.json",
+    "_comment_": "فایلی برای ذخیره کانال‌های تلگرام که به دلیل خطاهای مکرر تایم‌اوت شده‌اند",
+    "timeout_websites_file": "timeout_websites.json",
+    "_comment_": "فایلی برای ذخیره وب‌سایت‌هایی که به دلیل خطاهای مکرر تایم‌اوت شده‌اند"
   }
 }
