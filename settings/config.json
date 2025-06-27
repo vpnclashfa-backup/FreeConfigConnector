@@ -33,7 +33,23 @@
     "telegram_message_lookback_days": 7,
     "_comment_": "چند روز اخیر پیام های کانال های تلگرام را بررسی کند. (مثال: 7 به معنای 7 روز گذشته)",
     "telegram_max_messages_per_channel": 500,
-    "_comment_": "حداکثر تعداد پیام برای بررسی در هر کانال تلگرام. (مقدار None برای عدم محدودیت - مراقب باشید!)"
+    "_comment_": "حداکثر تعداد پیام برای بررسی در هر کانال تلگرام. (مقدار None برای عدم محدودیت - مراقب باشید!)",
+    "collection_timeout_seconds": 15,
+    "_comment_": "حداکثر زمان انتظار (بر حسب ثانیه) برای دریافت پاسخ از یک URL در هنگام جمع آوری از وب."
+  },
+
+  "parser_settings": {
+    "_comment_": "تنظیمات مربوط به تشخیص و استخراج کانفیگ ها از محتوای جمع آوری شده.",
+    "enable_base64_decoding": true,
+    "_comment_": "آیا محتوای base64 را برای یافتن لینک ها رمزگشایی کند؟",
+    "enable_clash_parser": true,
+    "_comment_": "آیا محتوای YML/Text را برای یافتن کانفیگ های Clash/بر اساس URL (Subscription) پارس کند؟",
+    "enable_singbox_parser": true,
+    "_comment_": "آیا محتوای JSON/Text را برای یافتن کانفیگ های SingBox/بر اساس URL (Subscription) پارس کند؟",
+    "enable_json_parser": true,
+    "_comment_": "آیا محتوای JSON را به صورت عمومی برای یافتن لینک ها و اطلاعات مرتبط پارس کند؟",
+    "ignore_unparseable_content": false,
+    "_comment_": "اگر محتوا قابل پارس کردن نبود، آیا آن را نادیده بگیرد (true) یا یک هشدار ثبت کند (false)؟"
   },
 
   "proxy_limits": {
