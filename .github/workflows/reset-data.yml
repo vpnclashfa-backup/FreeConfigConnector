@@ -1,0 +1,60 @@
+name: Reset Collection Data # نام این Workflow در GitHub UI
+
+on:
+  workflow_dispatch: # رویداد: اجازه اجرای دستی از رابط کاربری GitHub را می‌دهد
+    inputs:
+      confirm_reset:
+        description: 'آیا از ریست کردن تمام آمار و تایم‌اوت‌ها مطمئن هستید؟ برای تایید "بله" را تایپ کنید.'
+        required: true
+        type: string
+        default: 'خیر' # 'no' in Farsi
+
+jobs:
+  reset-stats-and-timeouts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # برای Push کردن تغییرات لازم است
+
+    steps:
+      - name: Checkout repository # دریافت کد شما از مخزن GitHub
+        uses: actions/checkout@v4
+
+      - name: Check Confirmation # بررسی تایید کاربر قبل از ریست
+        run: |
+          if [ "${{ github.event.inputs.confirm_reset }}" != "بله" ]; then # 'yes' in Farsi
+            echo "Reset confirmed: '${{ github.event.inputs.confirm_reset }}'"
+            echo "ریست تایید نشد. بدون تغییرات خارج می‌شود."
+            exit 1
+          fi
+          echo "ریست تایید شد. ادامه عملیات ریست."
+
+      - name: Reset Statistics and Timeouts # حذف فایل‌های آمار و تایم‌اوت
+        run: |
+          echo "حذف فایل‌های گزارش و تایم‌اوت..."
+          rm -f output/timeout_telegram_channels.json
+          rm -f output/timeout_websites.json
+          rm -f output/report.md
+          # اگر collected_links.json را هم می‌خواهید پاک کنید:
+          # rm -f output/collected_links.json
+          echo "فایل‌ها حذف شدند."
+
+      - name: Configure Git # پیکربندی Git برای Commit و Push
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+      - name: Commit and Push Reset # کامیت و Push کردن تغییرات ریست
+        run: |
+          # اضافه کردن فایل‌های حذف شده (برای ثبت حذف در Git)
+          git add output/timeout_telegram_channels.json
+          git add output/timeout_websites.json
+          git add output/report.md
+          # اگر collected_links.json را پاک کردید، اینجا هم اضافه کنید:
+          # git add output/collected_links.json
+          
+          # ایجاد یک commit؛ اگر تغییری نباشد، Job را با موفقیت ادامه می‌دهد.
+          git commit -m "Auto: Reset collection statistics and timeouts" || echo "No changes to commit (files might not have existed)"
+          git push
+        env:
+          # از GITHUB_TOKEN برای احراز هویت استفاده می‌کند
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
