@@ -4,7 +4,7 @@ import os
 import json
 import sys
 from datetime import datetime
-from typing import List, Dict # NEW: Import List and Dict for type hints
+from typing import List, Dict, Optional # Import Optional
 
 # Import necessary modules
 from src.utils.settings_manager import settings
@@ -17,8 +17,8 @@ from src.collectors.web_collector import WebCollector
 async def main_collector_flow():
     print("--- Initializing ConfigConnector ---")
 
-    telegram_collector: Optional[TelegramCollector] = None # Use Optional
-    web_collector: Optional[WebCollector] = None # Use Optional
+    telegram_collector: Optional[TelegramCollector] = None
+    web_collector: Optional[WebCollector] = None
     
     all_collected_links: List[Dict] = [] # List to hold all links (dicts) from both sources
 
@@ -49,13 +49,13 @@ async def main_collector_flow():
             await web_collector.close()
 
         # Deduplicate all collected links before final save and report
-        unique_links: Dict[str, Dict] = {} # Dict for deduplication
+        unique_links: Dict[str, Dict] = {}
         for item in all_collected_links:
-            unique_links[item['link']] = item # Use link as key, overwrite if duplicate (keeps last one)
+            unique_links[item['link']] = item
         
         final_unique_links: List[Dict] = list(unique_links.values())
 
-        # Save collected links using the new OutputManager
+        # Save collected links using the OutputManager
         output_manager.save_configs(final_unique_links)
 
 
@@ -63,30 +63,73 @@ async def main_collector_flow():
         source_manager.finalize()
 
         # Generate and print final report
-        initial_telegram_channels_count = len(source_manager.get_active_telegram_channels())
-        initial_websites_count = len(source_manager.get_active_websites())
-        
-        stats_reporter.set_unique_collected(len(final_unique_links)) 
+        # These counts are already handled by stats_reporter.start_report call in __main__
+        # stats_reporter.set_unique_collected(len(final_unique_links)) # This is set before in __main__ after deduplication
         stats_reporter.end_report() 
-        stats_reporter.generate_report(source_manager)
+        
+        # NEW: Generate Markdown report content
+        markdown_report_content = stats_reporter.generate_report(source_manager)
+        print("\n" + "-"*50)
+        print("Generated Report (Full details in report.md):")
+        print(markdown_report_content) # Also print to console for immediate feedback
+        print("-" * 50 + "\n")
+
+        # NEW: Save Markdown report to file
+        try:
+            report_file_path = settings.REPORT_FILE
+            os.makedirs(os.path.dirname(report_file_path), exist_ok=True)
+            with open(report_file_path, 'w', encoding='utf-8') as f:
+                f.write(markdown_report_content)
+            print(f"Main: Collection report saved to: {report_file_path}")
+        except Exception as e:
+            print(f"Main: Error saving report file: {e}")
 
         print("--- ConfigConnector Process Completed ---")
 
 
 if __name__ == "__main__":
+    # Ensure source_manager is initialized to get initial counts for stats_reporter
+    # This also loads existing data like timeout lists
+    _ = source_manager # Accessing it ensures it's initialized
+
+    # Start the reporting period (before any collection starts)
     initial_telegram_channels_count = len(source_manager.get_active_telegram_channels())
     initial_websites_count = len(source_manager.get_active_websites())
     stats_reporter.start_report(initial_telegram_channels_count, initial_websites_count)
+    
+    # Set unique collected count early, so if an error occurs later, it's reflected in the report
+    # This might be slightly less accurate if deduplication happens *after* an error,
+    # but it ensures the report is populated. The final unique count is set in finally block.
+    # stats_reporter.set_unique_collected(0) # Will be updated in finally block
 
     try:
         asyncio.run(main_collector_flow())
     except KeyboardInterrupt:
         print("\nMain: Program interrupted by user (Ctrl+C). Exiting gracefully.")
+        # Ensure finalize and report are still run even on interrupt
         source_manager.finalize()
         stats_reporter.end_report()
-        stats_reporter.generate_report(source_manager)
+        # Re-generate report to ensure it has latest state after interrupt
+        markdown_report_content = stats_reporter.generate_report(source_manager)
+        report_file_path = settings.REPORT_FILE
+        os.makedirs(os.path.dirname(report_file_path), exist_ok=True)
+        with open(report_file_path, 'w', encoding='utf-8') as f:
+            f.write(markdown_report_content)
+        print(f"Main: Collection report saved to: {report_file_path} (on interrupt)")
+        print("--- ConfigConnector Process Completed (Interrupted) ---")
     except Exception as e:
         print(f"Main: A critical error occurred in main execution: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        # Attempt to save report even on critical error
+        source_manager.finalize()
+        stats_reporter.end_report()
+        markdown_report_content = stats_reporter.generate_report(source_manager)
+        report_file_path = settings.REPORT_FILE
+        os.makedirs(os.path.dirname(report_file_path), exist_ok=True)
+        with open(report_file_path, 'w', encoding='utf-8') as f:
+            f.write(markdown_report_content)
+        print(f"Main: Collection report saved to: {report_file_path} (on critical error)")
+        print("--- ConfigConnector Process Completed (with Critical Error) ---")
+        sys.exit(1) # Exit with an error code
+
