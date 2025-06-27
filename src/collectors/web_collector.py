@@ -1,17 +1,17 @@
 # src/collectors/web_collector.py
 
 import httpx
-import re
-import os
-import json
+import re # Not directly used in this version, but can be kept for future
+import os # Not directly used in this version, but can be kept for future
+import json # Not directly used in this version, but can be kept for future
 import asyncio
 import traceback
-from typing import Optional, List, Dict # Added Optional, List, Dict
+from typing import Optional, List, Dict # Ensure all necessary types are imported
     
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
-from src.parsers.config_parser import ConfigParser
+from src.parsers.config_parser import ConfigParser # Import ConfigParser
 
 class WebCollector:
     def __init__(self):
@@ -83,7 +83,7 @@ class WebCollector:
             print(f"WebCollector: No content fetched for {url}. Skipping parsing.")
             return []
 
-        parsed_links_info = self.config_parser.parse_content(content)
+        parsed_links_info: List[Dict] = self.config_parser.parse_content(content)
         
         if not parsed_links_info and not settings.IGNORE_UNPARSEABLE_CONTENT:
             print(f"WebCollector: Could not parse any links from {url}. Content snippet: {content[:100]}...")
@@ -110,7 +110,7 @@ class WebCollector:
                 await self._discover_and_add_website(link)
                 source_manager.update_website_score(url, 2)
             else:
-                pass
+                pass # Link found but protocol is not active or is unknown
 
 
         if collected_links:
@@ -131,7 +131,7 @@ class WebCollector:
         for url in active_websites:
             tasks.append(self.collect_from_website(url))
         
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results: List[Exception | List[Dict]] = await asyncio.gather(*tasks, return_exceptions=True) # Explicitly type results
 
         for i, result in enumerate(results):
             url = active_websites[i]
@@ -139,11 +139,12 @@ class WebCollector:
                 print(f"WebCollector: Error processing website {url}: {result}")
                 traceback.print_exc()
                 source_manager.update_website_score(url, -20)
-            elif result:
+            elif result: # result is List[Dict] here
                 all_collected_links.extend(result)
         
-        for website_name in list(source_manager.timeout_websites.keys()): # Iterate over a copy to avoid RuntimeError
-            if website_name in active_websites and source_manager._is_timed_out_website(website_name):
+        # Check for newly timed-out websites after processing all
+        for website_name in list(source_manager.timeout_websites.keys()):
+            if website_name in active_websites and source_manager._all_website_scores.get(website_name, 0) <= settings.MAX_TIMEOUT_SCORE_WEB:
                 stats_reporter.add_newly_timed_out_website(website_name)
 
         print(f"WebCollector: Finished collection. Total links from web: {len(all_collected_links)}")
