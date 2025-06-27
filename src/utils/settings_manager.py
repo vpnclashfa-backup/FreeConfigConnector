@@ -3,7 +3,7 @@
 import json
 import os
 from datetime import timedelta
-from typing import Optional # برای type hints
+from typing import Optional, Dict # NEW: Import Dict for type hints
 
 class Settings:
     def __init__(self, config_file: str = 'settings/config.json'):
@@ -14,7 +14,7 @@ class Settings:
         self.config_data = self._load_config()
         self._set_attributes()
 
-    def _load_config(self) -> Dict:
+    def _load_config(self) -> Dict: # Type hint needs Dict to be imported
         if not os.path.exists(self.full_config_path):
             print(f"Error: Configuration file not found at {self.full_config_path}. Please create it as described in the steps.")
             exit(1)
