@@ -86,8 +86,6 @@
     "plaintext_output_dir": "plaintext",
     "base64_output_dir": "base64",
     
-    "plaintext_links_file": "plaintext_links.txt",
-    "base64_links_file": "base64_links.txt",
     "mixed_links_file": "mixed_links.txt",
     "protocol_specific_sub_dir": "protocols",
     "report_file": "report.md"
