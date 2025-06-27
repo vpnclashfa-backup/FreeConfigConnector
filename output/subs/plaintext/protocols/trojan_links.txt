@@ -1,0 +1,22 @@
+trojan://$Iu_sLk*u,@...:?security=tls&sni=anten.ir&type=ws&host=mail.link.link-kon.ir&path=%FtrPrmagLwtAsCJF%Fed%Cud&fp=randomized&alpn=http/.# TR-WS-TLS IR-...:
+trojan://HVQZykyXiY@prod-cahg-cloud-hybrid-ttrg.cyberscaler.com:?type=tcp&path=%F&host=sourceforge.net&headerType=http&security=none#ایرانسل، مخابرات و رایتل NorthXRAY - Trojan
+trojan://OzcSHlmo@prod-cahg-cloud-hybrid-ttrg.cyberscaler.com:?type=tcp&path=%F&host=sourceforge.net&headerType=http&security=none#NorthXRAY - Trojan
+trojan://aaa-dc-eb-aca-acdeda@...:?path=%FmFvKLJyIAeydvnmRKWDa&security=tls&alpn=http%F.&host=y..xyz&fp=chrome&type=ws&sni=Y..XYZ#Channel%id%A%%ShadowProxy%F%F%F%B
+trojan://aacbabc-bcaa-caba-bacd-bcbcaacbacab@...:?security=tls&type=tcp# TELEGRAM-CHANNEL ARTIFICIAL-INTELLIGENCE @NEUROVANCE
+trojan://accabab-aabc-abac-dacb-abcbccbcabaa@...:?security=tls&type=tcp# TELEGRAM-CHANNEL MTPROTO-PROXY @NEXUPROXY
+trojan://aeeb-da--b-bdd@...:?path=%FHqIJMuzOWLijID&security=tls&alpn=http%F.&host=cvfgtre..xyz&fp=chrome&type=ws&sni=CVFgTrE..XyZ#Channel%id%A%%ShadowProxy
+trojan://bfbc-ae-df-ca-ceab@...:?security=tls&sni=node.servernode.store&type=tcp# TR-TCP-TLS IR-...:
+trojan://bfc-a-e-a-fbac@...:?security=tls&sni=gr.grtj.sulindac.top&type=grpc&serviceName=gr.grtj.sulindac.top# TR-GRPC-TLS IR-...:
+trojan://caabacb-aabc-baca-dbac-bcbccabaaabc@...:?security=tls&type=tcp# DEVELOPED-BY SOROUSH-MIRZAEI FOLLOW-CONTACT SYDSRSMRZ
+trojan://cbf-d-e--fedbcd@...:?security=tls&type=tcp&sni=customer----.stark-industries.solutions#[ ]t.me/ConfigsHub ϟ ᴇsғᴀʜᴀɴ ϟ ᴄᴏᴜɴᴛʀʏ: #ᴅᴇɴᴍᴀʀᴋ (ᴅᴋ) ᴄᴏɴғɪɢsʜᴜʙ ₪ ᴀʀɪʏᴀ ₪ ʙᴏᴛ ₪ ʜᴇʟᴘ
+trojan://ccabbaa-baac-acab-bcda-baacccbabacb@...:?security=tls&type=tcp# LATEST-UPDATE FRI--TIR- :
+trojan://cff-ce-b--fbcbd@...:?mode=gun&security=tls&type=grpc&serviceName=gr.grtj.sulindac.top&sni=gr.grtj.sulindac.top#%E%A%AB%EF%B%F%Telegram%D%%Canfing_VPN لطفاً دانلود نداشته باشید / برای اتصال تا یک دقیقه صبر کنید . @Canfing_VPN | به اشتراک بگذارید
+trojan://cff-ce-b--fbcbd@...:?mode=gun&security=tls&type=grpc&serviceName=nl.grtj.sulindac.top&sni=nl.grtj.sulindac.top#%E%A%AB%EF%B%F%Telegram%D%%Canfing_VPN لطفاً دانلود نداشته باشید / برای اتصال تا یک دقیقه صبر کنید . @Canfing_VPN | به اشتراک بگذارید
+trojan://dada-aaa-db-bdfb-dee@...:?security=none&type=ws&path=%Ftr%Fv%FtNtL%Fgfdr# TR-WS-NONE IR-...:
+trojan://ee-af--f-adcbbef@...:?host=invincible.fafa.shop&type=ws&security=tls&path=%FtrSCRVJeFFsFa%FMTILjEOSNCMQ%D%D%Fed%D&sni=invInCibLE.FAFA.ShOp&fp=randomized&alpn=http%F.#%F%F%%A%%-%Trojan%-%IPv%:%
+trojan://ee-af--f-adcbbef@...:?host=invincible.fafa.shop&type=ws&security=tls&path=%FtrWiuqinyrI%FMTILjEOSNCMQ%D%D%Fed%D&sni=inVINcibLe.FAfa.SHop&fp=randomized&alpn=http%F.#%F%F%%A%%-%Trojan%-%IPv%:%
+trojan://hjvQyaAz@prod-cahg-cloud-hybrid-ttrg.cyberscaler.com:?type=tcp&path=%F&host=sourceforge.net&headerType=http&security=none#ایرانسل، مخابرات و رایتل NorthXRAY - Trojan
+trojan://pTxWrfZ@prod-hge-cloud-hybrid-tmk.cyberscaler.com:?type=tcp&path=%F&host=sourceforge.net&headerType=http&security=none#ایرانسل، مخابرات و رایتل NorthXRAY
+trojan://qfdmLueO@prod-cahg-cloud-hybrid-ttrg.cyberscaler.com:?type=tcp&path=%F&host=sourceforge.net&headerType=http&security=none#NorthXRAY - Trojan
+trojan://ttfang@...:?path=%F&security=tls&host=ttfang.fange.me&type=ws&sni=ttfang.fange.me#Channel%id%A%%ShadowProxy%F%F%%B%F%F%%AC
+trojan://wPslQKBJN@...:?security=tls&sni=wivip.dtsazino.com&type=tcp# TR-TCP-TLS IR-...:

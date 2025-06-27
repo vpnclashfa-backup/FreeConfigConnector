@@ -1,0 +1,46 @@
+{
+    "https://raw.githubusercontent.com/4n0nymou3/ss-config-updater/refs/heads/main/configs.txt": {
+        "score": 6,
+        "last_timeout": "2025-06-27T08:05:58.549572+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_4.txt": {
+        "score": 10,
+        "last_timeout": "2025-06-27T08:05:58.549574+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_2.txt": {
+        "score": -2,
+        "last_timeout": "2025-06-27T08:05:58.549575+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_3.txt": {
+        "score": 14,
+        "last_timeout": "2025-06-27T08:05:58.549577+00:00"
+    },
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/countries/ir/mixed": {
+        "score": 57,
+        "last_timeout": "2025-06-27T08:05:58.549579+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt": {
+        "score": 9,
+        "last_timeout": "2025-06-27T08:05:58.549580+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_1.txt": {
+        "score": 6,
+        "last_timeout": "2025-06-27T08:05:58.549582+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_4.txt": {
+        "score": -2,
+        "last_timeout": "2025-06-27T08:05:58.549584+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_3.txt": {
+        "score": 6,
+        "last_timeout": "2025-06-27T08:05:58.549585+00:00"
+    },
+    "https://raw.githubusercontent.com/4n0nymou3/wg-config-fetcher/refs/heads/main/configs/wireguard_configs.txt": {
+        "score": -2,
+        "last_timeout": "2025-06-27T08:05:58.549587+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_2.txt": {
+        "score": 6,
+        "last_timeout": "2025-06-27T08:05:58.549589+00:00"
+    }
+}
