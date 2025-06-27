@@ -30,10 +30,6 @@ class Settings:
             exit(1)
 
     def _set_attributes(self):
-        # Telegram API Settings (Removed as per new config, but keeping placeholders if needed)
-        # self.TELEGRAM_API_ID = int(os.environ.get('TELEGRAM_API_ID', self.config_data.get('telegram_api', {}).get('api_id', 0)))
-        # self.TELEGRAM_API_HASH = os.environ.get('TELEGRAM_API_HASH', self.config_data.get('telegram_api', {}).get('api_hash', ''))
-
         # Collection settings
         self.ACTIVE_PROTOCOLS = [
             p for p in self.config_data.get('collection_settings', {}).get('active_protocols', [])
@@ -44,7 +40,7 @@ class Settings:
         )
         max_msg_per_channel = self.config_data.get('collection_settings', {}).get('telegram_max_messages_per_channel', 500)
         self.TELEGRAM_MAX_MESSAGES_PER_CHANNEL = None if max_msg_per_channel == "None" else max_msg_per_channel
-
+        
         self.COLLECTION_TIMEOUT_SECONDS = self.config_data.get('collection_settings', {}).get('collection_timeout_seconds', 15)
 
 
@@ -82,14 +78,14 @@ class Settings:
         # File Paths
         self.SOURCES_DIR_NAME = self.config_data.get('file_paths', {}).get('sources_dir', 'sources')
         self.OUTPUT_DIR_NAME = self.config_data.get('file_paths', {}).get('output_dir', 'output')
-
+        
         current_dir = os.path.dirname(os.path.abspath(__file__))
         self.PROJECT_ROOT = os.path.abspath(os.path.join(current_dir, '..', '..'))
 
         self.CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('channels_file', 'channels.txt'))
         self.WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('websites_file', 'websites.txt'))
         self.COLLECTED_LINKS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('collected_links_file', 'collected_links.json'))
-
+        
         self.DISCOVERED_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_telegram_channels_file', 'discovered_telegram_channels.txt'))
         self.DISCOVERED_WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_websites_file', 'discovered_websites.txt'))
         self.TIMEOUT_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_telegram_channels_file', 'timeout_telegram_channels.json'))
@@ -111,6 +107,11 @@ class Settings:
             if not p.startswith('_comment_')
         ]
         self.OUTPUT_HEADER_BASE64_ENABLED = self.config_data.get('output_settings', {}).get('output_header_base64_enabled', True)
+        # --- جدید: تنظیمات فایل های پروتکل-خاص ---
+        self.GENERATE_PROTOCOL_SPECIFIC_FILES = self.config_data.get('output_settings', {}).get('generate_protocol_specific_files', True)
+        self.PROTOCOL_SPECIFIC_DIR_NAME = self.config_data.get('output_settings', {}).get('protocol_specific_dir', 'protocols')
+        # مسیر کامل پوشه پروتکل‌های جداگانه
+        self.FULL_PROTOCOL_SPECIFIC_DIR_PATH = os.path.join(self.FULL_SUB_DIR_PATH, self.PROTOCOL_SPECIFIC_DIR_NAME)
 
 
 settings = Settings()
