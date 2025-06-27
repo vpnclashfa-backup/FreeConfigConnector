@@ -2,7 +2,7 @@
 
 import os
 import base64
-from typing import List, Dict # CORRECT: List and Dict are imported
+from typing import List, Dict
 from collections import defaultdict 
 from src.utils.settings_manager import settings
 
@@ -18,6 +18,7 @@ class OutputManager:
             print(f"OutputManager: Protocol-specific directory '{settings.FULL_PROTOCOL_SPECIFIC_DIR_PATH}' ensured.")
         
         print("OutputManager: Core output directories ensured.")
+
 
     def save_configs(self, unique_links: List[Dict]):
         """
