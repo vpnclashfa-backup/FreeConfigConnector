@@ -21,7 +21,7 @@ jobs:
 
       - name: Check Confirmation # بررسی تایید کاربر قبل از ریست
         run: |
-          if [ "${{ github.event.inputs.confirm_reset }}" != "بله" ]; then # 'yes' in Farsi
+          if [ "${{ github.event.inputs.confirm_reset }}" != "بله" ]; then
             echo "Reset confirmed: '${{ github.event.inputs.confirm_reset }}'"
             echo "ریست تایید نشد. بدون تغییرات خارج می‌شود."
             exit 1
@@ -31,11 +31,13 @@ jobs:
       - name: Reset Statistics and Timeouts # حذف فایل‌های آمار و تایم‌اوت
         run: |
           echo "حذف فایل‌های گزارش و تایم‌اوت..."
-          rm -f output/timeout_telegram_channels.json
-          rm -f output/timeout_websites.json
-          rm -f output/report.md
+          # از 'git rm -f' برای حذف فایل‌هایی که ممکن است قبلاً به Git اضافه شده باشند استفاده می‌کنیم.
+          # '|| true' اضافه شده تا اگر فایل وجود نداشت، دستور با خطا مواجه نشود و ادامه یابد.
+          git rm -f output/timeout_telegram_channels.json || true
+          git rm -f output/timeout_websites.json || true
+          git rm -f output/report.md || true
           # اگر collected_links.json را هم می‌خواهید پاک کنید:
-          # rm -f output/collected_links.json
+          # git rm -f output/collected_links.json || true
           echo "فایل‌ها حذف شدند."
 
       - name: Configure Git # پیکربندی Git برای Commit و Push
@@ -45,16 +47,11 @@ jobs:
           
       - name: Commit and Push Reset # کامیت و Push کردن تغییرات ریست
         run: |
-          # اضافه کردن فایل‌های حذف شده (برای ثبت حذف در Git)
-          git add output/timeout_telegram_channels.json
-          git add output/timeout_websites.json
-          git add output/report.md
-          # اگر collected_links.json را پاک کردید، اینجا هم اضافه کنید:
-          # git add output/collected_links.json
+          # 'git add -u' همه فایل‌های ردیابی شده که حذف شده‌اند را به مرحله آماده‌سازی اضافه می‌کند.
+          # این اطمینان می‌دهد که حتی اگر فایل‌ها قبلا توسط 'rm -f' حذف شده باشند، حذف آن‌ها ثبت شود.
+          git add -u output/ # اضافه کردن تمامی تغییرات (از جمله حذف فایل‌ها) در پوشه output
           
-          # ایجاد یک commit؛ اگر تغییری نباشد، Job را با موفقیت ادامه می‌دهد.
-          git commit -m "Auto: Reset collection statistics and timeouts" || echo "No changes to commit (files might not have existed)"
+          git commit -m "Auto: Reset collection statistics and timeouts" || echo "No changes to commit (files might not have existed or were already removed)"
           git push
         env:
-          # از GITHUB_TOKEN برای احراز هویت استفاده می‌کند
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
