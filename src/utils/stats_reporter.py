@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 from collections import defaultdict
-from typing import Dict, List, Set # NEW: Import Dict, List, Set
+from typing import Dict, List, Set, Optional # Import Optional
 
 class StatsReporter:
     def __init__(self):
@@ -13,8 +13,9 @@ class StatsReporter:
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
         self.total_collected_links: int = 0
+        self.unique_collected_links: int = 0 # NEW: Add this attribute
         self.protocol_counts: Dict[str, int] = {}
-        self.source_link_counts: Dict[str, Dict[str, Dict[str, int]]] = {} # type: ignore # Complex nested dict
+        self.source_link_counts: Dict[str, Dict[str, Dict[str, int]]] = {} # type: ignore
         self.discovered_channel_count: int = 0
         self.discovered_website_count: int = 0
         self.initial_active_telegram_channels: int = 0
@@ -34,6 +35,10 @@ class StatsReporter:
         """Ends the reporting period."""
         self.end_time = datetime.now()
         print("StatsReporter: Reporting ended.")
+
+    def set_unique_collected(self, count: int): # NEW: Add this method
+        """Sets the total count of unique collected links."""
+        self.unique_collected_links = count
 
     def increment_total_collected(self):
         """Increments the total count of collected links."""
@@ -79,7 +84,8 @@ class StatsReporter:
             duration = self.end_time - self.start_time
             report_lines.append(f"Duration: {str(duration).split('.')[0]}")
 
-        report_lines.append(f"\nTotal Links Collected: {self.total_collected_links}")
+        report_lines.append(f"\nTotal Links Collected (Raw): {self.total_collected_links}")
+        report_lines.append(f"Total Unique Links (After Deduplication): {self.unique_collected_links}") # NEW: Use unique_collected_links
 
         report_lines.append("\nLinks by Protocol:")
         if self.protocol_counts:
@@ -103,9 +109,10 @@ class StatsReporter:
         report_lines.append("\n--- Current Source Status (Active & Timed Out) ---")
         
         report_lines.append("\nTelegram Channels:")
-        active_telegram_channels_with_scores: List[tuple[str, int]] = [
+        # get_active_telegram_channels already sorts by score
+        active_telegram_channels_with_scores: List[tuple[str, int]] = [ 
             (ch, source_manager_instance._all_telegram_scores.get(ch, 0))
-            for ch in source_manager_instance.get_active_telegram_channels()
+            for ch in source_manager_instance.get_active_telegram_channels() 
         ]
         if active_telegram_channels_with_scores:
             report_lines.append("  Active (Sorted by Score - Highest First):")
@@ -126,11 +133,13 @@ class StatsReporter:
 
                 recovery_status = ""
                 if last_timeout_dt:
-                    time_since_timeout = datetime.now(last_timeout_dt.tzinfo) - last_timeout_dt
-                    if time_since_timeout >= source_manager_instance.settings.TIMEOUT_RECOVERY_DURATION:
+                    # Need to import settings into stats_reporter to get TIMEOUT_RECOVERY_DURATION
+                    from src.utils.settings_manager import settings as report_settings # Temporarily import settings for calculation
+                    time_since_timeout = datetime.now(last_timeout_dt.tzinfo if last_timeout_dt.tzinfo else timezone.utc) - last_timeout_dt
+                    if time_since_timeout >= report_settings.TIMEOUT_RECOVERY_DURATION: # Use report_settings here
                         recovery_status = " (Ready for recovery)"
                     else:
-                        remaining_time = source_manager_instance.settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout
+                        remaining_time = report_settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout # Use report_settings
                         days = remaining_time.days
                         seconds = remaining_time.seconds
                         hours = seconds // 3600
@@ -167,11 +176,12 @@ class StatsReporter:
 
                 recovery_status = ""
                 if last_timeout_dt:
-                    time_since_timeout = datetime.now(last_timeout_dt.tzinfo) - last_timeout_dt
-                    if time_since_timeout >= source_manager_instance.settings.TIMEOUT_RECOVERY_DURATION:
+                    from src.utils.settings_manager import settings as report_settings # Temporarily import settings for calculation
+                    time_since_timeout = datetime.now(last_timeout_dt.tzinfo if last_timeout_dt.tzinfo else timezone.utc) - last_timeout_dt
+                    if time_since_timeout >= report_settings.TIMEOUT_RECOVERY_DURATION:
                         recovery_status = " (Ready for recovery)"
                     else:
-                        remaining_time = source_manager_instance.settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout
+                        remaining_time = report_settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout
                         days = remaining_time.days
                         seconds = remaining_time.seconds
                         hours = seconds // 3600
@@ -201,4 +211,3 @@ class StatsReporter:
         return "\n".join(report_lines)
 
 stats_reporter = StatsReporter()
-
