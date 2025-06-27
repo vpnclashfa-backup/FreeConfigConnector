@@ -1,0 +1,71 @@
+{
+  "_comment_": "این فایل شامل تنظیمات اصلی برنامه است. لطفا فقط مقادیر (مثلا عدد یا true/false یا متن داخل گیومه) را تغییر دهید و ساختار کلی را دستکاری نکنید.",
+
+  "telegram_api": {
+    "_comment_": "تنظیمات مربوط به API تلگرام. API_ID و API_HASH را از my.telegram.org دریافت کنید. توصیه میشود این مقادیر را به عنوان متغیر محیطی (Environment Variable) تنظیم کنید.",
+    "api_id": 0,
+    "api_hash": ""
+  },
+
+  "collection_settings": {
+    "_comment_": "تنظیمات مربوط به جمع آوری لینک ها.",
+    "active_protocols": [
+      "_comment_": "لیست پروتکل هایی که برنامه باید لینک های آنها را جمع آوری کند. اگر پروتکلی را نمیخواهید، آن را از لیست حذف کنید یا با کامنت کردن غیرفعال کنید (با اضافه کردن // در ابتدای خط).",
+      "http",
+      "socks5",
+      "ss",
+      "ssr",
+      "vmess",
+      "vless",
+      "trojan",
+      "mieru",
+      "snell",
+      "anytls",
+      "hysteria",
+      "hysteria2",
+      "tuic",
+      "wireguard",
+      "ssh",
+      "reality",
+      "warp",
+      "juicity"
+    ],
+    "telegram_message_lookback_days": 7,
+    "_comment_": "چند روز اخیر پیام های کانال های تلگرام را بررسی کند. (مثال: 7 به معنای 7 روز گذشته)",
+    "telegram_max_messages_per_channel": 500,
+    "_comment_": "حداکثر تعداد پیام برای بررسی در هر کانال تلگرام. (مقدار None برای عدم محدودیت - مراقب باشید!)"
+  },
+
+  "proxy_limits": {
+    "_comment_": "محدودیت تعداد پروکسی ها برای ذخیره سازی (برای مراحل بعدی که پروکسی ها ذخیره می شوند).",
+    "max_total_proxies": 1000,
+    "_comment_": "حداکثر تعداد کل پروکسی های منحصر به فرد برای ذخیره سازی در تمام پروتکل ها.",
+    "max_proxies_per_protocol": {
+      "_comment_": "حداکثر تعداد پروکسی برای هر پروتکل به صورت جداگانه.",
+      "http": 100,
+      "socks5": 100,
+      "ss": 100,
+      "ssr": 100,
+      "vmess": 100,
+      "vless": 100,
+      "trojan": 100,
+      "hysteria": 50,
+      "hysteria2": 50,
+      "tuic": 50,
+      "wireguard": 50,
+      "ssh": 50,
+      "reality": 50,
+      "warp": 50,
+      "juicity": 50
+    }
+  },
+
+  "file_paths": {
+    "_comment_": "مسیر فایل ها و پوشه ها. این مقادیر را تغییر ندهید مگر اینکه ساختار پوشه را تغییر داده باشید.",
+    "sources_dir": "sources",
+    "output_dir": "output",
+    "channels_file": "channels.txt",
+    "websites_file": "websites.txt",
+    "collected_links_file": "collected_links.json"
+  }
+}
