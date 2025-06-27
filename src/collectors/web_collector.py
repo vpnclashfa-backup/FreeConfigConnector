@@ -6,12 +6,12 @@ import os
 import json
 import asyncio
 import traceback
-from typing import Optional, List, Dict # CORRECT: Optional, List, Dict are imported
+from typing import Optional, List, Dict # Added Optional, List, Dict
     
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
-from src.parsers.config_parser import ConfigParser # Import ConfigParser
+from src.parsers.config_parser import ConfigParser
 
 class WebCollector:
     def __init__(self):
@@ -31,46 +31,42 @@ class WebCollector:
             return response.text
         except httpx.TimeoutException:
             print(f"WebCollector: Timeout fetching {url}")
-            source_manager.update_website_score(url, -settings.COLLECTION_TIMEOUT_SECONDS) # Decrease score on timeout
+            source_manager.update_website_score(url, -settings.COLLECTION_TIMEOUT_SECONDS)
             return None
         except httpx.HTTPStatusError as e:
-            # Handle 404 (Not Found), 403 (Forbidden), etc.
             print(f"WebCollector: HTTP Error {e.response.status_code} fetching {url}: {e.response.text.strip()[:100]}...")
-            if e.response.status_code == 404: # Not Found - may indicate dead link
-                source_manager.update_website_score(url, -50) # Strong penalty
-            elif e.response.status_code == 429: # Too Many Requests (Rate Limit)
+            if e.response.status_code == 404:
+                source_manager.update_website_score(url, -50)
+            elif e.response.status_code == 429:
                 print(f"WebCollector: Rate limit hit for {url}. Consider increasing delay or using proxies.")
-                source_manager.update_website_score(url, -30) # Strong penalty
+                source_manager.update_website_score(url, -30)
             else:
-                source_manager.update_website_score(url, -10) # General HTTP error penalty
+                source_manager.update_website_score(url, -10)
             return None
         except httpx.RequestError as e:
             print(f"WebCollector: Request error fetching {url}: {e}")
-            source_manager.update_website_score(url, -15) # Decrease score on other request errors
+            source_manager.update_website_score(url, -15)
             return None
         except Exception as e:
             print(f"WebCollector: An unexpected error occurred fetching {url}: {e}")
-            source_manager.update_website_score(url, -20) # Decrease score on unexpected errors
+            source_manager.update_website_score(url, -20)
             return None
 
     def _get_raw_github_url(self, github_url: str) -> str:
         """
         Converts a regular GitHub URL (blob) to its raw content URL.
-        Example: https://github.com/user/repo/blob/main/file.txt
-        becomes: https://raw.githubusercontent.com/user/repo/main/file.txt
         """
         if "github.com" in github_url and "/blob/" in github_url:
             raw_url = github_url.replace("github.com", "raw.githubusercontent.com")
             raw_url = raw_url.replace("/blob/", "/")
             return raw_url
-        return github_url # Return original if not a recognizable GitHub blob URL
+        return github_url
 
     async def _discover_and_add_website(self, url: str):
         """
         Discovers a new website URL and adds it to the SourceManager if enabled.
         """
-        # We standardize and validate URLs in source_manager
-        if settings.ENABLE_CONFIG_LINK_DISCOVERY: # Using ENABLE_CONFIG_LINK_DISCOVERY for generic URL discovery
+        if settings.ENABLE_CONFIG_LINK_DISCOVERY:
             if source_manager.add_website(url):
                 stats_reporter.increment_discovered_website_count()
                 print(f"WebCollector: Discovered and added new website URL: {url}")
@@ -87,12 +83,11 @@ class WebCollector:
             print(f"WebCollector: No content fetched for {url}. Skipping parsing.")
             return []
 
-        # Use ConfigParser to parse the content
         parsed_links_info = self.config_parser.parse_content(content)
         
         if not parsed_links_info and not settings.IGNORE_UNPARSEABLE_CONTENT:
             print(f"WebCollector: Could not parse any links from {url}. Content snippet: {content[:100]}...")
-            source_manager.update_website_score(url, -2) # Small negative score if content fetched but no valid links
+            source_manager.update_website_score(url, -2)
         elif not parsed_links_info and settings.IGNORE_UNPARSEABLE_CONTENT:
             print(f"WebCollector: No links parsed from {url}. Ignoring unparseable content as per settings.")
 
@@ -109,35 +104,29 @@ class WebCollector:
                 stats_reporter.increment_total_collected()
                 stats_reporter.increment_protocol_count(protocol)
                 stats_reporter.record_source_link("web", url, protocol)
-                # print(f"  WebCollector: Found {protocol} link: {link}")
-                source_manager.update_website_score(url, 1) # Small positive score for successful extraction
+                source_manager.update_website_score(url, 1)
             elif protocol == 'subscription':
-                # If a subscription link is found, add it as a new website source
                 print(f"WebCollector: Found subscription URL: {link}. Attempting to add as a new source.")
                 await self._discover_and_add_website(link)
-                source_manager.update_website_score(url, 2) # Slightly higher score for discovering new source
-            else: # Protocol not active or unknown, but it's a valid link found by parser
-                # print(f"WebCollector: Found link with inactive/unknown protocol ({protocol}): {link}. Skipping.")
-                pass # Don't add to collected_links if protocol is not active
+                source_manager.update_website_score(url, 2)
+            else:
+                pass
 
 
-        # At the end of processing a URL, if any links were found, give a positive score
         if collected_links:
-            source_manager.update_website_score(url, 5) # More substantial positive score for overall success
+            source_manager.update_website_score(url, 5)
 
         return collected_links
 
     async def collect_from_websites(self) -> List[Dict]:
         """Main method to collect from all active websites."""
         all_collected_links: List[Dict] = []
-        active_websites = source_manager.get_active_websites() # Get active and sorted websites
-        print(f"\nWebCollector: Starting collection from {len(active_websites)} active websites.")
+        active_websites: List[str] = source_manager.get_active_websites()
 
         if not active_websites:
             print("WebCollector: No active websites to process.")
             return []
 
-        # Process websites in parallel
         tasks = []
         for url in active_websites:
             tasks.append(self.collect_from_website(url))
@@ -149,12 +138,11 @@ class WebCollector:
             if isinstance(result, Exception):
                 print(f"WebCollector: Error processing website {url}: {result}")
                 traceback.print_exc()
-                source_manager.update_website_score(url, -20) # Penalize for unhandled exceptions
+                source_manager.update_website_score(url, -20)
             elif result:
                 all_collected_links.extend(result)
         
-        # Record newly timed-out websites for the report
-        for website_name, data in source_manager.timeout_websites.items():
+        for website_name in list(source_manager.timeout_websites.keys()): # Iterate over a copy to avoid RuntimeError
             if website_name in active_websites and source_manager._is_timed_out_website(website_name):
                 stats_reporter.add_newly_timed_out_website(website_name)
 
