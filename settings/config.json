@@ -1,12 +1,6 @@
 {
   "_comment_": "این فایل شامل تنظیمات اصلی برنامه است. لطفا فقط مقادیر (مثلا عدد یا true/false یا متن داخل گیومه) را تغییر دهید و ساختار کلی را دستکاری نکنید.",
 
-  "telegram_api": {
-    "_comment_": "تنظیمات مربوط به API تلگرام. API_ID و API_HASH را از my.telegram.org دریافت کنید. توصیه میشود این مقادیر را به عنوان متغیر محیطی (Environment Variable) تنظیم کنید.",
-    "api_id": 0,
-    "api_hash": ""
-  },
-
   "collection_settings": {
     "_comment_": "تنظیمات مربوط به جمع آوری لینک ها.",
     "active_protocols": [
@@ -124,6 +118,27 @@
     "base64_sub_file": "base64/base64_links.txt",
     "_comment_": "فایل خروجی برای لینک های بیس64 شده",
     "plaintext_sub_file": "plaintext/plaintext_links.txt",
-    "_comment_": "فایل خروجی برای لینک های متنی معمولی"
+    "_comment_": "فایل خروجی برای لینک های متنی معمولی",
+    "mixed_protocols_sub_file": "mixed/mixed_links.txt",
+    "_comment_": "فایل خروجی برای لینک های پروتکل های ترکیبی (بر اساس تنظیمات)."
+  },
+
+  "output_settings": {
+    "_comment_": "تنظیمات مربوط به خروجی نهایی لینک ها.",
+    "protocols_for_mixed_output": [
+      "_comment_": "لیست پروتکل هایی که باید در فایل mixed_links.txt گنجانده شوند. اگر خالی باشد، همه پروتکل های فعال را شامل می شود.",
+      "vmess",
+      "vless",
+      "trojan",
+      "ss",
+      "ssr",
+      "hysteria",
+      "hysteria2",
+      "tuic",
+      "reality",
+      "juicity"
+    ],
+    "output_header_base64_enabled": true,
+    "_comment_": "آیا هدر Base64 را در فایل خروجی base64_links.txt قرار دهد؟"
   }
 }
