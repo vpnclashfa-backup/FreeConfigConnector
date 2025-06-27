@@ -1,0 +1,60 @@
+name: Run Config Collector # نام Workflow که در GitHub UI نمایش داده می‌شود
+
+on:
+  workflow_dispatch: # رویداد: اجازه اجرای دستی از رابط کاربری GitHub را می‌دهد
+  # schedule: # رویداد: زمان‌بندی اجرای خودکار (در حال حاضر کامنت شده و غیرفعال است)
+  #   - cron: '0 */6 * * *' # هر 6 ساعت یک بار اجرا می‌شود (در دقیقه 0 بعد از هر 6 ساعت)
+  #     # مثال: 00:00, 06:00, 12:00, 18:00 (به وقت UTC)
+  #     # برای فعال‌سازی، کاراکتر '#' را از ابتدای 'schedule:' و خط پایین آن حذف کنید.
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest # استفاده از آخرین رانر اوبونتو برای اجرای Job
+
+    env:
+      TZ: Asia/Tehran # تنظیم منطقه زمانی برای Job، که بر زمان‌بندی cron و timestamp های اسکریپت تأثیر می‌گذارد
+
+    steps:
+      - name: Checkout repository # دریافت کد شما از مخزن GitHub
+        uses: actions/checkout@v4
+
+      - name: Set up Python # تنظیم محیط پایتون
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9' # یا '3.10', '3.11', '3.12' - نسخه پایتون مورد نظر خود را انتخاب کنید
+
+      - name: Install dependencies # نصب کتابخانه‌های پایتون از requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create output directories # اطمینان از وجود تمام پوشه‌های خروجی لازم
+        run: |
+          mkdir -p output/subs/base64
+          mkdir -p output/subs/plaintext
+          mkdir -p output/subs/mixed
+          mkdir -p output/subs/protocols # ایجاد پوشه جدید برای پروتکل‌های جداگانه
+
+      - name: Run the Config Collector # اجرای اسکریپت اصلی پایتون شما
+        run: python main.py
+
+      - name: Upload collected configs as artifact # آپلود فایل‌های خروجی به عنوان Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: collected-configs-${{ github.run_id }} # نام Artifact
+          path: output/subs/ # آپلود کل دایرکتوری 'subs' که شامل تمامی خروجی‌هاست
+
+      # می‌توانید Artifacts اضافی را برای سایر فایل‌های خروجی مانند collected_links.json یا فایل‌های timeout آپلود کنید
+      # - name: Upload all_collected_links.json
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: all-collected-links-json-${{ github.run_id }}
+      #     path: output/collected_links.json
+
+      # - name: Upload timeout files
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: timeout-files-${{ github.run_id }}
+      #     path: |
+      #       output/timeout_telegram_channels.json
+      #       output/timeout_websites.json
