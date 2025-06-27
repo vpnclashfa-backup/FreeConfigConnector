@@ -65,6 +65,10 @@ class Settings:
         # Source Management Settings
         self.MAX_TIMEOUT_SCORE_TELEGRAM = self.config_data.get('source_management', {}).get('max_timeout_score_telegram', -50)
         self.MAX_TIMEOUT_SCORE_WEB = self.config_data.get('source_management', {}).get('max_timeout_score_web', -10)
+        # --- جدید: تنظیم مدت زمان ریکاوری تایم‌اوت ---
+        self.TIMEOUT_RECOVERY_DURATION = timedelta(
+            days=self.config_data.get('source_management', {}).get('timeout_recovery_duration_days', 30)
+        )
         self.BLACKLIST_TELEGRAM_CHANNELS = self.config_data.get('source_management', {}).get('blacklist_telegram_channels', [])
         self.BLACKLIST_WEBSITES = self.config_data.get('source_management', {}).get('blacklist_websites', [])
         self.WHITELIST_TELEGRAM_CHANNELS = self.config_data.get('source_management', {}).get('whitelist_telegram_channels', [])
@@ -87,7 +91,6 @@ class Settings:
         self.WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('websites_file', 'websites.txt'))
         self.COLLECTED_LINKS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('collected_links_file', 'collected_links.json'))
 
-        # --- جدید: مسیر فایل‌های کشف شده و تایم‌اوت شده ---
         self.DISCOVERED_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_telegram_channels_file', 'discovered_telegram_channels.txt'))
         self.DISCOVERED_WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_websites_file', 'discovered_websites.txt'))
         self.TIMEOUT_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_telegram_channels_file', 'timeout_telegram_channels.json'))
