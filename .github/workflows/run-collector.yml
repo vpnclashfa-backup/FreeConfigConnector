@@ -1,0 +1,57 @@
+name: Run Config Collector # نام این Workflow در GitHub UI
+
+on:
+  workflow_dispatch: # اجازه اجرای دستی
+  # schedule: # زمان‌بندی اجرای خودکار (همچنان غیرفعال است)
+  #   - cron: '0 */6 * * *' # هر 6 ساعت یک بار
+  #     env:
+  #       TZ: Asia/Tehran # منطقه زمانی برای زمان‌بندی
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # برای Push کردن تغییرات لازم است
+
+    env:
+      TZ: Asia/Tehran # منطقه زمانی برای Job
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9' # یا '3.11' یا '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create output directories
+        run: |
+          mkdir -p output/subs/plaintext/protocols
+          mkdir -p output/subs/base64/protocols
+          mkdir -p output/ # برای report.md و timeout files
+
+      - name: Run the Config Collector
+        run: |
+          export PYTHONPATH=$PWD:$PYTHONPATH
+          python main.py
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+      - name: Add and Commit changes
+        run: |
+          git add output/subs/
+          git add output/report.md
+          git add output/timeout_telegram_channels.json
+          git add output/timeout_websites.json
+          
+          git commit -m "Auto: Update collected configs, report, and timeout stats" || echo "No changes to commit"
+          git push
