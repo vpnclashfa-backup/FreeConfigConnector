@@ -80,10 +80,16 @@
     "discovered_websites_file": "discovered_websites.txt",
     "timeout_telegram_channels_file": "timeout_telegram_channels.json",
     "timeout_websites_file": "timeout_websites.json",
+    
     "sub_dir": "subs",
-    "base64_sub_file": "base64/base64_links.txt",
-    "plaintext_sub_file": "plaintext/plaintext_links.txt",
-    "mixed_protocols_sub_file": "mixed/mixed_links.txt",
+    
+    "plaintext_output_dir": "plaintext",
+    "base64_output_dir": "base64",
+    
+    "plaintext_links_file": "plaintext_links.txt",
+    "base64_links_file": "base64_links.txt",
+    "mixed_links_file": "mixed_links.txt",
+    "protocol_specific_sub_dir": "protocols",
     "report_file": "report.md"
   },
 
@@ -102,6 +108,6 @@
     ],
     "output_header_base64_enabled": true,
     "generate_protocol_specific_files": true,
-    "protocol_specific_dir": "protocols"
+    "generate_mixed_protocol_file": true
   }
 }
