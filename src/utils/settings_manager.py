@@ -65,7 +65,6 @@ class Settings:
         # Source Management Settings
         self.MAX_TIMEOUT_SCORE_TELEGRAM = self.config_data.get('source_management', {}).get('max_timeout_score_telegram', -50)
         self.MAX_TIMEOUT_SCORE_WEB = self.config_data.get('source_management', {}).get('max_timeout_score_web', -10)
-        # --- جدید: تنظیم مدت زمان ریکاوری تایم‌اوت ---
         self.TIMEOUT_RECOVERY_DURATION = timedelta(
             days=self.config_data.get('source_management', {}).get('timeout_recovery_duration_days', 30)
         )
@@ -95,6 +94,11 @@ class Settings:
         self.DISCOVERED_WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_websites_file', 'discovered_websites.txt'))
         self.TIMEOUT_TELEGRAM_CHANNELS_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_telegram_channels_file', 'timeout_telegram_channels.json'))
         self.TIMEOUT_WEBSITES_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_websites_file', 'timeout_websites.json'))
+
+        # --- جدید: مسیرهای خروجی سابسکریپشن ---
+        self.SUB_DIR_NAME = self.config_data.get('file_paths', {}).get('sub_dir', 'subs')
+        self.BASE64_SUB_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.SUB_DIR_NAME, self.config_data.get('file_paths', {}).get('base64_sub_file', 'base64/base64_links.txt'))
+        self.PLAINTEXT_SUB_FILE = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.SUB_DIR_NAME, self.config_data.get('file_paths', {}).get('plaintext_sub_file', 'plaintext/plaintext_links.txt'))
 
 
 settings = Settings()
