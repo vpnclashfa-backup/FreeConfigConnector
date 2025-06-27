@@ -131,7 +131,7 @@ class WebCollector:
         for url in active_websites:
             tasks.append(self.collect_from_website(url))
         
-        results: List[Exception | List[Dict]] = await asyncio.gather(*tasks, return_exceptions=True) # Explicitly type results
+        results: List[Exception | List[Dict]] = await asyncio.gather(*tasks, return_exceptions=True)
 
         for i, result in enumerate(results):
             url = active_websites[i]
@@ -139,10 +139,9 @@ class WebCollector:
                 print(f"WebCollector: Error processing website {url}: {result}")
                 traceback.print_exc()
                 source_manager.update_website_score(url, -20)
-            elif result: # result is List[Dict] here
+            elif result:
                 all_collected_links.extend(result)
         
-        # Check for newly timed-out websites after processing all
         for website_name in list(source_manager.timeout_websites.keys()):
             if website_name in active_websites and source_manager._all_website_scores.get(website_name, 0) <= settings.MAX_TIMEOUT_SCORE_WEB:
                 stats_reporter.add_newly_timed_out_website(website_name)
