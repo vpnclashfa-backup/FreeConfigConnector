@@ -4,7 +4,7 @@ import re
 import base64
 import json
 from typing import Optional, Tuple, List
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, parse_qs
 
 # Import settings for active protocols if needed in validation logic
 from src.utils.settings_manager import settings
@@ -94,11 +94,46 @@ class ConfigValidator:
             return False
         except:
             return False
+    
+    @staticmethod
+    def is_reality_config(config: str) -> bool:
+        """
+        Validates if a VLESS config includes valid Reality parameters.
+        Reality needs: type=tcp (or other reality supported transports), security=reality, pbk, sni (and optionally fp).
+        """
+        try:
+            if not config.startswith('vless://'):
+                return False
+            
+            parsed = urlparse(config)
+            query_params = parse_qs(parsed.query) # parse_qs returns dict of lists
+            
+            # Check for required Reality parameters
+            security_val = query_params.get('security', [''])[0].lower()
+            pbk_val = query_params.get('pbk', [''])[0]
+            sni_val = query_params.get('sni', [''])[0]
+            
+            # Reality typically uses TCP transport, flow=xtls-rprx-vision etc.
+            # A common type for Reality is tcp or ws
+            type_val = query_params.get('type', [''])[0].lower() # default to empty string if not present
+            
+            # Basic check for host:port
+            if not (parsed.netloc and ':' in parsed.netloc):
+                return False
+
+            # Minimal Reality validation: security=reality, pbk and sni must be present
+            is_reality = (security_val == 'reality' and bool(pbk_val) and bool(sni_val))
+            
+            # Can add more checks here if needed, e.g., for specific 'type' or 'flow'
+            # For robustness, we check only the essential Reality parameters.
+            return is_reality
+        except Exception:
+            return False
+
 
     @staticmethod
     def is_valid_protocol_prefix(config_str: str) -> bool:
-        """Checks if a string starts with a known protocol prefix."""
-        # Use PROTOCOL_REGEX_MAP keys to check for valid starts.
+        """Checks if a string starts with a known protocol prefix from PROTOCOL_REGEX_MAP."""
         return any(config_str.startswith(p + '://') for p in PROTOCOL_REGEX_MAP.keys())
 
 
@@ -111,7 +146,7 @@ class ConfigValidator:
         config = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\ufe00-\ufe0f\u200b-\u200d\uFEFF\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', config)
         # Remove numbers with circle Unicode variations (e.g., 1️⃣, 2️⃣)
         config = re.sub(r'\d{1,2}\ufe0f?', '', config)
-        # Remove common Farsi/Arabic joining characters or repeated symbols like 🛜 ❓ ❗️ 🔤 etc
+        # Remove common Farsi/Arabic joining characters or repeated symbols (e.g., 🛜 ❓ ❗️ 🔤, etc. from the sample text)
         config = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u06F0-\u06F9\u200B-\u200F\u0640\u202A-\u202E\u2066-\u2069\uFE00-\uFE0F\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\ufeff\u200d\s]*[\u2705\u2714\u274c\u274e\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u26A0\u26A1\u26D4\u26C4\u26F0-\u26F5\u26FA\u26FD\u2700-\u27BF\u23F3\u231B\u23F8-\u23FA\u2B50\u2B55\u25AA\u25AB\u25FB\u25FC\u25FD\u25FE\u2B1B\u2B1C\u274C\u274E\u2753\u2754\u2755\u2795\u2796\u2797\u27B0\u27BF\u2934\u2935\u2B06\u2B07\u2B1B\u2B1C\u2B50\u2B55\u2BFF\U0001F0CF\U0001F170-\U0001F171\U0001F17E-\U0001F17F\U0001F18E\U0001F1F0\U0001F1F0-\U0001F1FF\U0001F200-\U0001F251\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF]+', '', config)
         config = re.sub(r'\s+', ' ', config) # Reduce multiple spaces to single space
         return config.strip()
@@ -148,7 +183,7 @@ class ConfigValidator:
             cleaned_candidate = ConfigValidator.clean_config_string(raw_config_candidate)
             
             # Apply protocol-specific cleaning based on its detected start
-            # This is crucial for protocols like vmess/hy2 which have specific formats
+            # This is crucial for protocols like vmess/hy2 which have specific end patterns.
             if cleaned_candidate.startswith("vmess://"):
                 cleaned_candidate = ConfigValidator.clean_vmess_config(cleaned_candidate)
             elif cleaned_candidate.startswith("hy2://"):
@@ -182,7 +217,17 @@ class ConfigValidator:
                 if len(parts) > 1: # Should have method:password@server:port part
                     return cls.is_base64(parts[0]) # Method:password part must be base64
                 return False # Invalid SS format
-            elif protocol_name in ['vless', 'trojan', 'hysteria', 'hysteria2', 'wireguard', 'ssh', 'warp', 'juicity', 'http', 'https', 'socks5', 'mieru', 'snell', 'anytls']:
+            elif protocol_name == 'vless':
+                # For VLESS, first check if it's a Reality config
+                if cls.is_reality_config(config): # This will classify it as 'reality' later
+                    return True # It's a valid VLESS (and Reality)
+                # Then, check generic VLESS structure (UUID@host:port)
+                parsed = urlparse(config)
+                # Basic VLESS validation: must have UUID and network location
+                # Example: vless://<UUID>@host:port
+                uuid_match = re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', parsed.netloc.split('@')[0] if '@' in parsed.netloc else '')
+                return bool(parsed.netloc and '@' in parsed.netloc and uuid_match)
+            elif protocol_name in ['trojan', 'hysteria', 'hysteria2', 'wireguard', 'ssh', 'warp', 'juicity', 'http', 'https', 'socks5', 'mieru', 'snell', 'anytls']:
                 # For many protocols, a basic URL parse and check for netloc (host:port) might suffice.
                 parsed = urlparse(config)
                 return bool(parsed.netloc) # Must have host:port
