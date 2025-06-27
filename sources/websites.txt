@@ -13,7 +13,7 @@ https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main
 https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/juicity
 https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/tuic
 https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/reality
+https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/hysteria
 https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr
 https://raw.githubusercontent.com/hiddify/hiddify-next/refs/heads/main/test.configs/warp
 https://raw.githubusercontent.com/ircfspace/warpsub/refs/heads/main/export/warp
-https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/hysteria
