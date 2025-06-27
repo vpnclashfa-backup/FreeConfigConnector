@@ -5,12 +5,10 @@ from telethon.tl.types import Message
 from telethon.tl.types import (
     MessageEntityBold, MessageEntityItalic, MessageEntityUnderline,
     MessageEntityStrike, MessageEntityCode, MessageEntityPre,
-    MessageEntitySpoiler, MessageEntityBlockquote, MessageEntityCustomEmoji,
-    MessageEntityTextUrl, MessageEntityMention, MessageEntityHashtag,
-    MessageEntityCashtag, MessageEntityBotCommand, MessageEntityEmail,
-    MessageEntityUrl, MessageEntityPhoneNumber, MessageEntityMentionName,
-    MessageEntityBankCard, MessageEntityPhone, MessageEntityEmail
+    MessageEntitySpoiler, MessageEntityBlockquote
+    # نیازی به وارد کردن همه Entity ها نیست مگر اینکه قصد استفاده داشته باشید
 )
+from telethon.errors import SessionPasswordNeededError, FloodWaitError, PeerFloodError, ChannelPrivateError, RPCError
 import re
 import os
 import json
@@ -110,30 +108,64 @@ class TelegramLinkCollector:
                 offset_date=offset_date
             ):
                 if not message.text:
-                    continue # اگر پیام متنی نداشت، رد شو
+                    continue
 
-                # 1. ابتدا کل متن پیام را بررسی کن
                 links_from_full_text = await self._extract_links_from_text(message.text)
                 collected_links.extend(links_from_full_text)
 
-                # 2. بررسی entityها برای استخراج متن از فرمت‌های خاص (مثلاً کد بلاک)
                 if message.entities:
                     for entity in message.entities:
                         start = entity.offset
                         end = entity.offset + entity.length
                         entity_text = message.text[start:end]
 
-                        # انواع مختلف MessageEntity برای قالب‌بندی‌های خاص
                         if isinstance(entity, (MessageEntityCode, MessageEntityPre, MessageEntityBlockquote, MessageEntitySpoiler)):
-                            # این فرمت‌ها معمولاً محتوای کانفیگ را به صورت خام نگه می‌دارند
                             extracted_from_entity = await self._extract_links_from_text(entity_text)
                             collected_links.extend(extracted_from_entity)
 
-                        # برای انواع دیگر مثل Bold, Italic, Underline, Strikethrough، متن همچنان بخشی از message.text است
-                        # و توسط بررسی اولیه پوشش داده می‌شود.
-                        # اگر نیاز بود، می‌توانیم برای اینها هم منطق خاصی اضافه کنیم.
-                        # مثال: MessageEntityBold, MessageEntityItalic, MessageEntityUnderline, MessageEntityStrike
-                        # MessageEntityTextUrl (اگر لینک داخل خودش یک کانفیگ باشد)
+                        # --- کشف کانال‌های جدید از لینک‌ها/تگ‌ها در پیام‌های تلگرام ---
+                        # کشف کانال از MessageEntityUrl (لینک مستقیم به t.me)
+                        if settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY and isinstance(entity, MessageEntityTextUrl):
+                            if "t.me/" in entity.url:
+                                discovered_channel_name = standardize_channel_username(entity.url)
+                                if discovered_channel_name and not discovered_channel_name.lower().endswith("bot"):
+                                    print(f"Discovered potential channel from URL: {discovered_channel_name}")
+                                    # TODO: Add to a shared source manager (in a future step)
+                                    pass 
+
+                        # کشف کانال از MessageEntityMention (تگ @)
+                        elif settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY and isinstance(entity, (MessageEntityMention, MessageEntityMentionName)):
+                            # برای MessageEntityMentionName، نام کاربری در entity.user.username خواهد بود
+                            # برای MessageEntityMention، خود متن تگ شده entity_text است
+                            if isinstance(entity, MessageEntityMention):
+                                discovered_channel_name = entity_text
+                            elif isinstance(entity, MessageEntityMentionName) and entity.user and entity.user.username:
+                                discovered_channel_name = "@" + entity.user.username
+                            else:
+                                continue # اگر نام کاربری پیدا نشد، رد شو
+
+                            if discovered_channel_name and not discovered_channel_name.lower().endswith("bot"):
+                                print(f"Discovered potential channel from mention: {discovered_channel_name}")
+                                # TODO: Add to a shared source manager (in a future step)
+                                pass
+
+
+                # --- کشف کانال‌های جدید از پیام‌های فوروارد شده ---
+                if settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY and message.fwd_from and message.fwd_from.from_id:
+                    fwd_from = message.fwd_from.from_id
+                    # اگر از یک کانال فوروارد شده باشد
+                    if hasattr(fwd_from, 'channel_id'):
+                        try:
+                            forwarded_channel_entity = await self.client.get_entity(fwd_from.channel_id)
+                            if hasattr(forwarded_channel_entity, 'username') and forwarded_channel_entity.username:
+                                discovered_channel_name = "@" + forwarded_channel_entity.username
+                                if discovered_channel_name and not discovered_channel_name.lower().endswith("bot"):
+                                    print(f"Discovered potential channel from forward: {discovered_channel_name}")
+                                    # TODO: Add to a shared source manager (in a future step)
+                                    pass
+                        except Exception as e:
+                            print(f"Could not get entity for forwarded channel ID {fwd_from.channel_id}: {e}")
+
 
             # حذف لینک‌های تکراری در این مرحله برای هر کانال
             collected_links = list({link['link']: link for link in collected_links}.values())
@@ -145,14 +177,12 @@ class TelegramLinkCollector:
                 print(f"Found {len(collected_links)} links in {channel_username}.")
                 self.channel_scores[channel_username] += 1
 
-        except FloodWaitError as e:
-            print(f"Warning: Flood wait of {e.seconds} seconds encountered for {channel_username}. Waiting...")
-            await asyncio.sleep(e.seconds + current_delay)
-            self.channel_scores[channel_username] -= 5
+        except (FloodWaitError, PeerFloodError) as e:
+            wait_time = e.seconds if isinstance(e, FloodWaitError) else 300 # Default for PeerFlood
+            print(f"Warning: Flood/Peer Flood encountered for {channel_username}. Waiting {wait_time + current_delay}s...")
+            await asyncio.sleep(wait_time + current_delay)
+            self.channel_scores[channel_username] -= 5 # امتیاز منفی شدید
             print(f"Resuming collection for {channel_username} after wait.")
-        except PeerFloodError:
-            print(f"Warning: Peer Flood encountered for {channel_username}. Skipping for now.")
-            self.channel_scores[channel_username] -= 10
         except ChannelPrivateError:
             print(f"Error: Channel {channel_username} is private or inaccessible. Skipping.")
             self.channel_scores[channel_username] -= 2
@@ -173,10 +203,18 @@ class TelegramLinkCollector:
 def standardize_channel_username(raw_input):
     """
     فرمت‌های مختلف ورودی کانال تلگرام را به فرمت استاندارد @username تبدیل می‌کند.
+    همچنین یوزرنیم‌هایی که به 'bot' ختم می‌شوند را فیلتر می‌کند.
     """
     username = raw_input.replace('https://t.me/s/', '').replace('https://t.me/', '').replace('t.me/s/', '').replace('t.me/', '')
+
     if username.endswith('@'):
         username = username[:-1]
+
+    # --- جدید: فیلتر کردن ربات‌ها ---
+    if username.lower().endswith("bot"):
+        print(f"Ignoring potential bot username: {raw_input}")
+        return None # یا یک رشته خالی برگردان تا پردازش نشود
+
     if not username.startswith('@'):
         username = '@' + username
     return username.strip()
@@ -205,8 +243,11 @@ async def main():
 
     with open(channels_file_path, 'r', encoding='utf-8') as f:
         raw_channels = [line.strip() for line in f if line.strip()]
-        target_channels = [standardize_channel_username(ch) for ch in raw_channels]
-        target_channels = list(set(target_channels))
+
+        # --- جدید: فیلتر کردن ربات‌ها از لیست ورودی ---
+        target_channels_raw = [standardize_channel_username(ch) for ch in raw_channels]
+        target_channels = [ch for ch in target_channels_raw if ch is not None] # فقط کانال‌های معتبر را نگه دار
+        target_channels = list(set(target_channels)) # حذف موارد تکراری
 
     all_collected_links = []
     for channel in target_channels:
