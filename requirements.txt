@@ -1,4 +1,5 @@
 telethon
-requests
+requests # هنوز نگه می داریم، ممکن است در آینده برای ابزارهای خاص نیاز شود
 httpx
 PyYAML
+beautifulsoup4
