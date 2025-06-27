@@ -3,39 +3,32 @@ import asyncio
 import os
 import json
 import sys
+from datetime import datetime
 
 # Import necessary modules
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
+from src.utils.output_manager import output_manager # Import OutputManager
 from src.collectors.telegram_collector import TelegramCollector
 from src.collectors.web_collector import WebCollector
 
 async def main_collector_flow():
     print("--- Initializing ConfigConnector ---")
 
-    # Initialize collectors
     telegram_collector = None
     web_collector = None
-
-    all_collected_links = [] # List to hold all links from both sources
+    
+    all_collected_links = [] # List to hold all links (dicts) from both sources
 
     try:
         # Initialize and run Telegram Collector
-        if settings.TELEGRAM_API_ID and settings.TELEGRAM_API_HASH:
-            telegram_collector = TelegramCollector(settings.TELEGRAM_API_ID, settings.TELEGRAM_API_HASH)
-            try:
-                await telegram_collector.connect()
-                print("\n--- Starting Telegram Link Collection ---")
-                collected_links_from_telegram = await telegram_collector.collect_from_telegram()
-                all_collected_links.extend(collected_links_from_telegram)
-                print("--- Telegram Link Collection Finished ---")
-            except Exception as e:
-                print(f"Main: Error during Telegram collection: {e}")
-                # In case of critical errors, ensure we still try to run web collector
-        else:
-            print("Main: Telegram API credentials not set. Skipping Telegram collection.")
-
+        print("\n--- Starting Telegram Link Collection (Web Scraping) ---")
+        telegram_collector = TelegramCollector()
+        collected_links_from_telegram = await telegram_collector.collect_from_telegram()
+        all_collected_links.extend(collected_links_from_telegram)
+        print("--- Telegram Link Collection Finished ---")
+        
         # Initialize and run Web Collector
         web_collector = WebCollector()
         print("\n--- Starting Web Link Collection ---")
@@ -55,39 +48,40 @@ async def main_collector_flow():
             await web_collector.close()
 
         # Deduplicate all collected links before final save and report
+        # The 'link' value in each dict is the unique identifier
         unique_links = {}
         for item in all_collected_links:
             unique_links[item['link']] = item # Use link as key, overwrite if duplicate (keeps last one)
-
+        
         final_unique_links = list(unique_links.values())
 
-        # Save combined unique links to output file
-        output_dir = settings.OUTPUT_DIR_NAME # Use directory name from settings
-        os.makedirs(os.path.join(settings.PROJECT_ROOT, output_dir), exist_ok=True) # Ensure output dir exists
-        output_file_path = settings.COLLECTED_LINKS_FILE
+        # Save collected links using the new OutputManager
+        output_manager.save_configs(final_unique_links) # Use OutputManager to save
 
-        try:
-            with open(output_file_path, 'w', encoding='utf-8') as f:
-                json.dump(final_unique_links, f, indent=4, ensure_ascii=False)
-            print(f"\nMain: All collected unique links saved to: {output_file_path}")
-        except Exception as e:
-            print(f"Main: Error saving collected links to file: {e}")
 
         # Finalize SourceManager (save scores and status)
         source_manager.finalize()
 
         # Generate and print final report
-        stats_reporter.set_unique_collected(len(final_unique_links)) # Set unique count before reporting
-        stats_reporter.generate_report(source_manager)
+        # Pass initial active counts to stats_reporter
+        initial_telegram_channels_count = len(source_manager.get_active_telegram_channels()) # These are already filtered and sorted
+        initial_websites_count = len(source_manager.get_active_websites())
+        
+        # Ensure stats_reporter has the latest unique collected count
+        stats_reporter.set_unique_collected(len(final_unique_links)) 
+        stats_reporter.end_report() # End report time
+        stats_reporter.generate_report(source_manager) # Generate the report with updated counts
 
         print("--- ConfigConnector Process Completed ---")
 
 
 if __name__ == "__main__":
     # Start the reporting period (before any collection starts)
-    initial_telegram_channels = len(source_manager.get_active_telegram_channels())
-    initial_websites = len(source_manager.get_active_websites())
-    stats_reporter.start_report(initial_telegram_channels, initial_websites)
+    # Load initial sources counts from source_manager after it initializes
+    # SourceManager is a global instance, so it's initialized on import.
+    initial_telegram_channels_count = len(source_manager.get_active_telegram_channels())
+    initial_websites_count = len(source_manager.get_active_websites())
+    stats_reporter.start_report(initial_telegram_channels_count, initial_websites_count)
 
     # Run the main asynchronous flow
     try:
@@ -96,9 +90,11 @@ if __name__ == "__main__":
         print("\nMain: Program interrupted by user (Ctrl+C). Exiting gracefully.")
         # Ensure finalize and report are still run even on interrupt
         source_manager.finalize()
+        stats_reporter.end_report() # End report time on interrupt
         stats_reporter.generate_report(source_manager)
     except Exception as e:
         print(f"Main: A critical error occurred in main execution: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1) # Exit with an error code
+
