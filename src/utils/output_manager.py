@@ -3,35 +3,42 @@
 import os
 import base64
 from typing import List, Dict
-from collections import defaultdict 
+from collections import defaultdict # New: To group links by protocol
 from src.utils.settings_manager import settings
 
 class OutputManager:
     def __init__(self):
+        # Ensure base output and subs directories exist
         os.makedirs(settings.FULL_SUB_DIR_PATH, exist_ok=True)
-        os.makedirs(os.path.dirname(settings.BASE64_SUB_FILE), exist_ok=True)
-        os.makedirs(os.path.dirname(settings.PLAINTEXT_SUB_FILE), exist_ok=True)
-        os.makedirs(os.path.dirname(settings.MIXED_PROTOCOLS_SUB_FILE), exist_ok=True)
         
+        # Ensure plaintext and base64 main directories exist
+        os.makedirs(settings.FULL_PLAINTEXT_OUTPUT_PATH, exist_ok=True)
+        os.makedirs(settings.FULL_BASE64_OUTPUT_PATH, exist_ok=True)
+
+        # Create protocol-specific sub-directories within both plaintext and base64
         if settings.GENERATE_PROTOCOL_SPECIFIC_FILES:
-            os.makedirs(settings.FULL_PROTOCOL_SPECIFIC_DIR_PATH, exist_ok=True)
-            print(f"OutputManager: Protocol-specific directory '{settings.FULL_PROTOCOL_SPECIFIC_DIR_PATH}' ensured.")
+            os.makedirs(settings.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR, exist_ok=True)
+            os.makedirs(settings.FULL_BASE64_PROTOCOL_SPECIFIC_DIR, exist_ok=True)
+            print(f"OutputManager: Protocol-specific directories ensured under plaintext/ and base64/.")
         
-        print("OutputManager: Core output directories ensured.")
+        print("OutputManager: Core output directories for new structure ensured.")
 
 
     def save_configs(self, unique_links: List[Dict]):
         """
-        Saves collected unique links into structured output files (Base64, Plaintext, Mixed, and Protocol-specific).
+        Saves collected unique links into the new structured output files.
         """
-        print("\nOutputManager: Saving collected configs...")
+        print("\nOutputManager: Saving collected configs to new structure...")
         
-        plaintext_links: List[str] = []
-        base64_links_to_encode: List[str] = []
-        mixed_output_links: List[str] = []
-        protocol_specific_links: Dict[str, List[str]] = defaultdict(list)
-        
+        all_links_plaintext: List[str] = [] # All links for plaintext_links.txt
+        all_links_base64: List[str] = []    # All links for base64_links.txt (will be encoded)
 
+        mixed_links_plaintext: List[str] = [] # Links for plaintext/mixed_links.txt
+        mixed_links_base64: List[str] = []    # Links for base64/mixed_links.txt (will be encoded)
+
+        protocol_specific_links_plaintext: Dict[str, List[str]] = defaultdict(list)
+        protocol_specific_links_base64: Dict[str, List[str]] = defaultdict(list)
+        
         for link_info in unique_links:
             protocol = link_info.get('protocol')
             link = link_info.get('link')
@@ -39,35 +46,50 @@ class OutputManager:
             if not protocol or not link:
                 continue
 
-            plaintext_links.append(link)
-            base64_links_to_encode.append(link)
+            # Add to main plaintext and base64 lists
+            all_links_plaintext.append(link)
+            all_links_base64.append(link) # Will be encoded later
 
-            if settings.PROTOCOLS_FOR_MIXED_OUTPUT:
-                if protocol in settings.PROTOCOLS_FOR_MIXED_OUTPUT:
-                    mixed_output_links.append(link)
-            else:
-                if protocol in settings.ACTIVE_PROTOCOLS:
-                    mixed_output_links.append(link)
+            # Add to mixed output lists if enabled and protocol matches criteria
+            if settings.GENERATE_MIXED_PROTOCOL_FILE:
+                if settings.PROTOCOLS_FOR_MIXED_OUTPUT: # If specific protocols are defined for mixed output
+                    if protocol in settings.PROTOCOLS_FOR_MIXED_OUTPUT:
+                        mixed_links_plaintext.append(link)
+                        mixed_links_base64.append(link)
+                else: # If no specific protocols are defined, include all active protocols in mixed output
+                    if protocol in settings.ACTIVE_PROTOCOLS:
+                        mixed_links_plaintext.append(link)
+                        mixed_links_base64.append(link)
             
+            # Add to protocol-specific grouping if enabled
             if settings.GENERATE_PROTOCOL_SPECIFIC_FILES:
-                if protocol in settings.ACTIVE_PROTOCOLS:
-                    protocol_specific_links[protocol].append(link)
+                if protocol in settings.ACTIVE_PROTOCOLS: # Only save for active protocols
+                    protocol_specific_links_plaintext[protocol].append(link)
+                    protocol_specific_links_base64[protocol].append(link) # Will be encoded later
         
-        plaintext_links.sort()
-        base64_links_to_encode.sort()
-        mixed_output_links.sort()
+        # Sort all link lists alphabetically for consistency
+        all_links_plaintext.sort()
+        all_links_base64.sort()
+        mixed_links_plaintext.sort()
+        mixed_links_base64.sort()
 
-        self._write_plaintext_file(settings.PLAINTEXT_SUB_FILE, plaintext_links)
-        self._write_base64_file(settings.BASE64_SUB_FILE, base64_links_to_encode)
-        self._write_plaintext_file(settings.MIXED_PROTOCOLS_SUB_FILE, mixed_output_links)
+        # Save main plaintext and base64 files
+        self._write_plaintext_file(settings.PLAINTEXT_LINKS_FILE, all_links_plaintext)
+        self._write_base64_encoded_file(settings.BASE64_LINKS_FILE, all_links_base64)
 
+        # Save mixed protocol files (if enabled)
+        if settings.GENERATE_MIXED_PROTOCOL_FILE:
+            self._write_plaintext_file(settings.PLAINTEXT_MIXED_FILE, mixed_links_plaintext)
+            self._write_base64_encoded_file(settings.BASE64_MIXED_FILE, mixed_links_base64)
+
+        # Save protocol-specific files (if enabled)
         if settings.GENERATE_PROTOCOL_SPECIFIC_FILES:
-            self._write_protocol_specific_files(protocol_specific_links)
+            self._write_protocol_specific_files_pair(protocol_specific_links_plaintext, protocol_specific_links_base64)
 
-        print("OutputManager: All configs saved to respective files.")
+        print("OutputManager: All configs saved to new respective files.")
 
     def _write_plaintext_file(self, file_path: str, links: List[str]):
-        """Writes a list of links to a file, each on a new line."""
+        """Writes a list of links to a file, each on a new line (plaintext)."""
         try:
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -77,7 +99,7 @@ class OutputManager:
         except Exception as e:
             print(f"OutputManager: Error saving plaintext links to {file_path}: {e}")
 
-    def _write_base64_file(self, file_path: str, links: List[str]):
+    def _write_base64_encoded_file(self, file_path: str, links: List[str]):
         """
         Encodes a list of links to base64 and writes them to a file.
         Includes a header if enabled in settings.
@@ -103,30 +125,33 @@ class OutputManager:
                 f.write(encoded_string)
             print(f"OutputManager: Saved {len(links)} base64 encoded links to {file_path}")
         except Exception as e:
-            print(f"OutputManager: Error saving base64 links to {file_path}: {e}")
+            print(f"OutputManager: Error saving base64 encoded links to {file_path}: {e}")
 
-    def _write_protocol_specific_files(self, protocol_links: Dict[str, List[str]]):
+    def _write_protocol_specific_files_pair(self, 
+                                             plaintext_links_by_protocol: Dict[str, List[str]], 
+                                             base64_links_by_protocol: Dict[str, List[str]]):
         """
-        Writes separate files for each protocol in the protocol_specific_dir.
+        Writes separate files for each protocol in both plaintext/protocols/ and base64/protocols/.
         """
-        print(f"OutputManager: Generating protocol-specific files in '{settings.FULL_PROTOCOL_SPECIFIC_DIR_PATH}'...")
-        os.makedirs(settings.FULL_PROTOCOL_SPECIFIC_DIR_PATH, exist_ok=True)
-
-        for protocol, links in protocol_links.items():
-            if not links:
-                continue
-            
+        print(f"OutputManager: Generating protocol-specific files in '{settings.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR}' and '{settings.FULL_BASE64_PROTOCOL_SPECIFIC_DIR}'...")
+        
+        # Plaintext protocol-specific files
+        os.makedirs(settings.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR, exist_ok=True)
+        for protocol, links in plaintext_links_by_protocol.items():
+            if not links: continue
             links.sort()
-
             file_name = f"{protocol}_links.txt"
-            file_path = os.path.join(settings.FULL_PROTOCOL_SPECIFIC_DIR_PATH, file_name)
-            try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    for link in links:
-                        f.write(link + '\n')
-                print(f"OutputManager: Saved {len(links)} {protocol} links to {file_path}")
-            except Exception as e:
-                print(f"OutputManager: Error saving {protocol} links to {file_path}: {e}")
+            file_path = os.path.join(settings.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR, file_name)
+            self._write_plaintext_file(file_path, links)
+        
+        # Base64 protocol-specific files
+        os.makedirs(settings.FULL_BASE64_PROTOCOL_SPECIFIC_DIR, exist_ok=True)
+        for protocol, links in base64_links_by_protocol.items():
+            if not links: continue
+            links.sort()
+            file_name = f"{protocol}_links.txt"
+            file_path = os.path.join(settings.FULL_BASE64_PROTOCOL_SPECIFIC_DIR, file_name)
+            self._write_base64_encoded_file(file_path, links)
 
 # Create a global instance of OutputManager
 output_manager = OutputManager()
