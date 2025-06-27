@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta, timezone
 import asyncio 
 import traceback
-from typing import Optional, List, Dict 
+from typing import Optional, List, Dict, Tuple 
 
 # Import necessary modules from utils
 from src.utils.settings_manager import settings
@@ -22,18 +22,15 @@ from src.utils.config_validator import ConfigValidator
 class TelegramCollector:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=settings.COLLECTION_TIMEOUT_SECONDS)
-        # NEW: Use get_protocol_regex_patterns from protocol_definitions
         self.protocol_regex_patterns_map = get_protocol_regex_patterns()
-        # NEW: Use the combined regex for splitting from protocol_definitions
         self.combined_protocol_regex = get_combined_protocol_regex()
-        # NEW: Instantiate ConfigValidator
         self.config_validator = ConfigValidator()
         print("TelegramCollector: Initialized for Telegram Web (t.me/s/) collection.")
 
     async def _fetch_channel_page(self, channel_username: str) -> Optional[str]:
         """Fetches the HTML content of a Telegram Web channel page."""
         clean_username = channel_username.lstrip('@')
-        url = f"https://t.me/s/{clean_username}"
+        url = f"https://t.me/s/{clean_username}" # Public Telegram Web URL
         print(f"TelegramCollector: Fetching channel page: {url}")
         
         try:
@@ -67,8 +64,6 @@ class TelegramCollector:
             print(f"TelegramCollector: An unexpected error occurred fetching {url}: {e}")
             source_manager.update_telegram_channel_score(channel_username, -25)
             return None
-
-    # OLD _extract_links_from_text method removed. Will use a more robust parsing approach below.
 
     def _extract_date_from_message_html(self, message_soup_tag: BeautifulSoup) -> Optional[datetime]:
         """Extracts datetime from a BeautifulSoup message tag."""
@@ -121,7 +116,7 @@ class TelegramCollector:
             source_manager.update_telegram_channel_score(channel_username, -1)
             return []
 
-        messages_with_dates: List[Tuple[Optional[datetime], BeautifulSoup, BeautifulSoup]] = [] # Explicitly typed
+        messages_with_dates: List[Tuple[Optional[datetime], BeautifulSoup, BeautifulSoup]] = []
         for msg_wrap in messages_html:
             message_text_div = msg_wrap.find('div', class_='tgme_widget_message_text')
             if not message_text_div: continue
@@ -146,13 +141,21 @@ class TelegramCollector:
             all_message_text = message_text_div.get_text(separator=' ', strip=True)
 
             # NEW: Use ConfigValidator's split method to extract config candidates from the combined text
+            # This is where the core logic for finding configs is now.
             config_candidates = self.config_validator.split_configs_from_text(all_message_text, self.combined_protocol_regex)
 
             for candidate_link_str in config_candidates:
                 # Try to find which protocol this candidate belongs to and validate it
                 for protocol_name, pattern_str in self.protocol_regex_patterns_map.items():
-                    if re.match(pattern_str, candidate_link_str, re.IGNORECASE):
+                    # Check if the candidate starts with the regex for this protocol
+                    # We need to re-compile pattern_str here if it's not already compiled, or modify PROTOCOL_REGEX_MAP to store compiled patterns.
+                    # For now, let's recompile or ensure pattern_str is a direct prefix check for simplicity and speed.
+                    # As get_protocol_regex_patterns() gives regex strings, we use re.match.
+                    
+                    # Ensure the candidate starts with the protocol prefix (e.g., "vless://")
+                    if candidate_link_str.startswith(protocol_name + '://'):
                         # Validate the extracted config with the validator's specific protocol validation
+                        # The validation is now very permissive as per current debugging strategy.
                         if self.config_validator.validate_protocol_config(candidate_link_str, protocol_name):
                             collected_links.append({'protocol': protocol_name, 'link': candidate_link_str})
                             stats_reporter.increment_total_collected()
@@ -207,8 +210,11 @@ class TelegramCollector:
         
         for channel_name in list(source_manager.timeout_telegram_channels.keys()):
             # Check if this channel was processed and is now timed out in source_manager's internal score
-            # and was one of the initially active channels
-            if channel_name in active_channels and source_manager._all_telegram_scores.get(channel_name, 0) <= settings.MAX_TIMEOUT_SCORE_TELEGRAM:
+            # and was one of the initially active channels.
+            # Compare to settings.MAX_TIMEOUT_SCORE_TELEGRAM
+            if channel_name in source_manager._all_telegram_scores and \
+               source_manager._all_telegram_scores[channel_name] <= settings.MAX_TIMEOUT_SCORE_TELEGRAM and \
+               channel_name in active_channels: # Only add to newly timed out if it was an active channel
                 stats_reporter.add_newly_timed_out_channel(channel_name)
 
         print(f"TelegramCollector: Finished collection. Total links from Telegram: {len(all_collected_links)}")
