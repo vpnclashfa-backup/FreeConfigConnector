@@ -4,8 +4,7 @@ import base64
 import json
 import re
 import yaml # pip install PyYAML
-from typing import List, Dict, Optional, Tuple
-from urllib.parse import unquote, urlparse # Only if still needed directly here
+from typing import List, Dict, Optional, Tuple # Ensure Tuple is imported
 
 # Import from centralized protocol definitions and ConfigValidator
 from src.utils.protocol_definitions import get_protocol_regex_patterns, get_combined_protocol_regex
@@ -28,15 +27,16 @@ class ConfigParser:
         
         self.combined_protocol_regex = get_combined_protocol_regex()
 
-        # NEW: Ordered list of protocol names for prioritized matching.
+        # Ordered list of protocol names for prioritized matching.
         # Reality should be checked before generic VLESS.
+        # This list determines the order of checking for a protocol match.
         self.ordered_protocols_for_matching = [
-            "reality", # Check Reality first as it's a VLESS variant
+            "reality", # Check Reality first as it's a VLESS variant with specific parameters
             "vmess", "vless", "trojan", "ss", "ssr", "hysteria", "hysteria2",
             "tuic", "wireguard", "ssh", "warp", "juicity", "http", "https", "socks5",
             "mieru", "snell", "anytls"
             # Ensure this list covers all active_protocols from settings
-            # Order is important for accurate classification (more specific first)
+            # The order here is crucial for accurate classification (more specific first)
         ]
 
 
@@ -48,16 +48,18 @@ class ConfigParser:
         """
         found_links: List[Dict] = []
         
+        # Use the validator's split method to get potential clean config strings
         config_candidates = self.config_validator.split_configs_from_text(text_content, self.combined_protocol_regex)
 
         for candidate in config_candidates:
-            # NEW: Iterate through ordered protocols for prioritized matching
+            # Iterate through ordered protocols for prioritized matching
             for protocol_name in self.ordered_protocols_for_matching:
                 # Check if the candidate matches the pattern for this protocol AND is active
-                if protocol_name in self.protocol_regex_patterns_map:
+                if protocol_name in self.protocol_regex_patterns_map: # Check if this protocol is enabled in settings
                     compiled_pattern = self.compiled_patterns[protocol_name]
-                    if compiled_pattern.match(candidate):
+                    if compiled_pattern.match(candidate): # Use match() to check from start of string
                         # Validate the extracted config with the validator's specific protocol validation
+                        # Pass the protocol name (e.g., 'vmess') not the full 'vmess://'
                         if self.config_validator.validate_protocol_config(candidate, protocol_name):
                             found_links.append({'protocol': protocol_name, 'link': candidate})
                             break # Move to the next candidate once a valid match is found for this chunk
@@ -71,6 +73,7 @@ class ConfigParser:
         
         decoded_str = self.config_validator.decode_base64_text(content)
         if decoded_str:
+            # Check if decoded content looks like a list of links or another parsable format
             if len(decoded_str) > 10 and (self.combined_protocol_regex.search(decoded_str) or 
                                           self.config_validator.is_valid_protocol_prefix(decoded_str)):
                 print("Successfully decoded Base64 content and it contains potential links.")
@@ -92,35 +95,42 @@ class ConfigParser:
             if not isinstance(clash_data, dict):
                 return []
 
+            # Extract from 'proxies' list
             proxies = clash_data.get('proxies', [])
             for proxy_obj in proxies:
                 if isinstance(proxy_obj, dict):
+                    # Attempt to reconstruct SS/SSR links from dict, then validate
                     if proxy_obj.get('type', '').lower() == 'ss' and all(k in proxy_obj for k in ['cipher', 'password', 'server', 'port']):
                         try:
+                            # Reconstruct a shadowssocks link
                             method_pass = f"{proxy_obj['cipher']}:{proxy_obj['password']}"
                             encoded_method_pass = base64.b64encode(method_pass.encode()).decode()
                             ss_link = f"ss://{encoded_method_pass}@{proxy_obj['server']}:{proxy_obj['port']}"
                             if 'name' in proxy_obj:
                                 ss_link += f"#{proxy_obj['name']}"
                             
-                            if self.config_validator.validate_protocol_config(ss_link, 'ss'):
+                            if self.config_validator.validate_protocol_config(ss_link, 'ss'): # Pass 'ss' not 'ss://'
                                 extracted_links.append({'protocol': 'ss', 'link': ss_link})
                         except Exception as e:
                             print(f"Error reconstructing SS link from Clash: {e}")
                     
+                    # For other types (vmess, vless, trojan), they are often direct links or complex.
+                    # We rely on searching the JSON string representation for direct protocol links.
                     proxy_str_representation = json.dumps(proxy_obj)
                     extracted_links.extend(self._extract_direct_links(proxy_str_representation))
 
 
+            # Extract from 'proxy-providers' (URLs pointing to subscriptions)
             proxy_providers = clash_data.get('proxy-providers', {})
             for provider_name, provider_obj in proxy_providers.items():
                 if isinstance(provider_obj, dict) and 'url' in provider_obj:
+                    # Check if the URL is a valid http/https URL and add as a subscription source
                     if provider_obj['url'].startswith('http://') or provider_obj['url'].startswith('https://'):
                         extracted_links.append({'protocol': 'subscription', 'link': provider_obj['url']})
             
             print("Successfully parsed Clash config and extracted potential links.")
         except yaml.YAMLError:
-            pass
+            pass # Not a valid YAML (Clash) config
         except Exception as e:
             print(f"Error parsing Clash config: {e}")
         return extracted_links
@@ -141,6 +151,7 @@ class ConfigParser:
             outbounds = singbox_data.get('outbounds', [])
             for outbound_obj in outbounds:
                 if isinstance(outbound_obj, dict):
+                    # Convert outbound object to string to search for links like vmess://, vless://
                     outbound_str = json.dumps(outbound_obj)
                     extracted_links.extend(self._extract_direct_links(outbound_str))
                         
@@ -178,26 +189,34 @@ class ConfigParser:
         """
         all_extracted_links: List[Dict] = []
         
+        # 1. Try to extract direct links first from the raw content
         direct_links = self._extract_direct_links(content)
         all_extracted_links.extend(direct_links)
         
+        # 2. Try Base64 decoding and then parse the decoded content
         decoded_content = self._decode_base64(content)
         if decoded_content:
+            # First, extract direct links from decoded content
             base64_links = self._extract_direct_links(decoded_content)
             all_extracted_links.extend(base64_links)
             
+            # Then, try to parse decoded content as Clash/SingBox/general JSON
             all_extracted_links.extend(self._parse_clash_config(decoded_content))
             all_extracted_links.extend(self._parse_singbox_config(decoded_content))
             all_extracted_links.extend(self._parse_json_content(decoded_content))
 
 
+        # 3. Try Clash (YAML) parsing from raw content
         clash_links = self._parse_clash_config(content)
         all_extracted_links.extend(clash_links)
 
+        # 4. Try SingBox (JSON) parsing from raw content
         singbox_links = self._parse_singbox_config(content)
         all_extracted_links.extend(singbox_links)
 
+        # 5. Try general JSON parsing from raw content
         json_links = self._parse_json_content(content)
         all_extracted_links.extend(json_links)
         
+        # Deduplicate extracted links before returning
         return list({link['link']: link for link in all_extracted_links}.values())
