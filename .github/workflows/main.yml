@@ -11,8 +11,10 @@ jobs:
   build-and-run:
     runs-on: ubuntu-latest # استفاده از آخرین رانر اوبونتو برای اجرای Job
     
+    # NEW: Grant write permissions to the GITHUB_TOKEN for pushing changes
+    # جدید: اعطای دسترسی نوشتن به GITHUB_TOKEN برای Push کردن تغییرات
     permissions:
-      contents: write # اعطای دسترسی نوشتن به GITHUB_TOKEN برای Push کردن تغییرات
+      contents: write # این خط برای اجازه Push کردن به مخزن لازم است
 
     env:
       TZ: Asia/Tehran # تنظیم منطقه زمانی برای Job، که بر زمان‌بندی cron و timestamp های اسکریپت تأثیر می‌گذارد
@@ -24,7 +26,8 @@ jobs:
       - name: Set up Python # تنظیم محیط پایتون
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # یا '3.10', '3.11', '3.12' - نسخه پایتون مورد نظر خود را انتخاب کنید
+          python-version: '3.9' # Or '3.10', '3.11', '3.12' - choose your preferred Python version
+          # می‌توانید به نسخه‌های جدیدتر پایتون مانند '3.11' یا '3.12' به‌روزرسانی کنید.
 
       - name: Install dependencies # نصب کتابخانه‌های پایتون از requirements.txt
         run: |
@@ -37,13 +40,16 @@ jobs:
           mkdir -p output/subs/plaintext
           mkdir -p output/subs/mixed
           mkdir -p output/subs/protocols # ایجاد پوشه جدید برای پروتکل‌های جداگانه
+        # OutputManager در اسکریپت پایتون نیز این پوشه‌ها را ایجاد می‌کند، اما این یک اقدام احتیاطی خوب است.
 
       - name: Run the Config Collector # اجرای اسکریپت اصلی پایتون شما
-        # افزودن دایرکتوری فعلی به PYTHONPATH برای یافتن ماژول‌ها
+        # NEW: Add the current directory to PYTHONPATH so Python can find modules like 'src.utils.settings_manager'
+        # جدید: دایرکتوری فعلی را به PYTHONPATH اضافه می‌کند تا پایتون بتواند ماژول‌هایی مانند 'src.utils.settings_manager' را پیدا کند.
         run: |
-          export PYTHONPATH=$PWD:$PYTHONPATH
-          python main.py
+          export PYTHONPATH=$PWD:$PYTHONPATH # Add current working directory to Python path
+          python main.py # Execute the main script
 
+      # NEW: Add steps to commit and push changes to the repository
       # جدید: افزودن مراحل برای کامیت و Push کردن تغییرات به مخزن
       - name: Configure Git # پیکربندی Git با نام کاربری و ایمیل (نام عمومی)
         run: |
@@ -52,8 +58,15 @@ jobs:
           
       - name: Add and Commit changes # اضافه کردن، کامیت کردن و Push کردن فایل‌های تولید شده
         run: |
-          git add output/subs/ # اضافه کردن کل پوشه subs
-          git add output/report.md # NEW: اضافه کردن فایل گزارش report.md
+          # اضافه کردن کل پوشه 'subs' که شامل تمامی خروجی‌های کانفیگ است.
+          git add output/subs/
+          # اضافه کردن فایل گزارش Markdown
+          git add output/report.md
           
+          # اگر فایل‌های timeout (JSON) را نیز می‌خواهید Push کنید، خطوط زیر را فعال کنید:
+          # git add output/timeout_telegram_channels.json
+          # git add output/timeout_websites.json
+          
+          # ایجاد یک commit؛ اگر تغییری نباشد، پیام "No changes to commit" را چاپ می‌کند و Job را با موفقیت ادامه می‌دهد.
           git commit -m "Auto: Update collected configs and report" || echo "No changes to commit"
           git push
