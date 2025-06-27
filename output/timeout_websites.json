@@ -1,0 +1,46 @@
+{
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/countries/ir/mixed": {
+        "score": 9,
+        "last_timeout": "2025-06-27T08:27:18.974289+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_4.txt": {
+        "score": 35,
+        "last_timeout": "2025-06-27T08:27:18.974293+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_2.txt": {
+        "score": 35,
+        "last_timeout": "2025-06-27T08:27:18.974296+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_4.txt": {
+        "score": 35,
+        "last_timeout": "2025-06-27T08:27:18.974299+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_1.txt": {
+        "score": 35,
+        "last_timeout": "2025-06-27T08:27:18.974301+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_3.txt": {
+        "score": 14,
+        "last_timeout": "2025-06-27T08:27:18.974303+00:00"
+    },
+    "https://raw.githubusercontent.com/4n0nymou3/wg-config-fetcher/refs/heads/main/configs/wireguard_configs.txt": {
+        "score": -2,
+        "last_timeout": "2025-06-27T08:27:18.974304+00:00"
+    },
+    "https://raw.githubusercontent.com/4n0nymou3/ss-config-updater/refs/heads/main/configs.txt": {
+        "score": 9,
+        "last_timeout": "2025-06-27T08:27:18.974306+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_2.txt": {
+        "score": 35,
+        "last_timeout": "2025-06-27T08:27:18.974308+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt": {
+        "score": 34,
+        "last_timeout": "2025-06-27T08:27:18.974310+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_3.txt": {
+        "score": 35,
+        "last_timeout": "2025-06-27T08:27:18.974311+00:00"
+    }
+}
