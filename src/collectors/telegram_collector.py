@@ -5,10 +5,10 @@ from telethon.tl.types import Message
 from telethon.tl.types import (
     MessageEntityBold, MessageEntityItalic, MessageEntityUnderline,
     MessageEntityStrike, MessageEntityCode, MessageEntityPre,
-    MessageEntitySpoiler, MessageEntityBlockquote
-    # نیازی به وارد کردن همه Entity ها نیست مگر اینکه قصد استفاده داشته باشید
+    MessageEntitySpoiler, MessageEntityBlockquote, MessageEntityTextUrl,
+    MessageEntityMention, MessageEntityMentionName
 )
-from telethon.errors import SessionPasswordNeededError, FloodWaitError, PeerFloodError, ChannelPrivateError, RPCError
+from telethon.errors import SessionPasswordNeededError, FloodWaitError, PeerFloodError, ChannelPrivateError, RPCError, UserDeactivatedBanError, AuthKeyError
 import re
 import os
 import json
@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 import asyncio 
 
 from src.utils.settings_manager import settings
+from src.utils.source_manager import source_manager # وارد کردن SourceManager
+from src.utils.stats_reporter import stats_reporter # وارد کردن StatsReporter
 
 def get_config_regex_patterns():
     patterns = {}
@@ -51,26 +53,30 @@ def get_config_regex_patterns():
 
     return patterns
 
-class TelegramLinkCollector:
+class TelegramCollector: # تغییر نام به TelegramCollector برای وضوح بیشتر
     def __init__(self, api_id, api_hash, session_name='telegram_session'):
         self.client = TelegramClient(session_name, api_id, api_hash)
         self.config_patterns = get_config_regex_patterns()
-        self.channel_scores = {}
+        # امتیازدهی اکنون توسط source_manager انجام می‌شود، نیازی به channel_scores داخلی نیست.
 
     async def connect(self):
-        print("Connecting to Telegram...")
+        print("TelegramCollector: Connecting to Telegram...")
         try:
             await self.client.connect()
             if not await self.client.is_user_authorized():
-                print("Authorization required. Please enter your phone number and code.")
+                print("TelegramCollector: Authorization required. Please enter your phone number and code.")
                 await self.client.start()
-            print("Connected to Telegram.")
+            print("TelegramCollector: Connected to Telegram.")
         except SessionPasswordNeededError:
-            print("Error: Two-factor authentication is enabled. Please provide the password.")
+            print("TelegramCollector: Error: Two-factor authentication is enabled. Please provide the password.")
+            await self.client.disconnect()
+            raise # Re-raise to stop if 2FA is needed
+        except AuthKeyError:
+            print("TelegramCollector: Error: Authorization key is invalid. Please delete the session file and try again.")
             await self.client.disconnect()
             raise
         except Exception as e:
-            print(f"Failed to connect to Telegram: {e}")
+            print(f"TelegramCollector: Failed to connect to Telegram: {e}")
             raise
 
     async def _extract_links_from_text(self, text_content):
@@ -84,23 +90,45 @@ class TelegramLinkCollector:
                 found_links.append({'protocol': protocol, 'link': link.strip()})
         return found_links
 
-    async def get_links_from_channel(self, channel_username):
+    async def _discover_and_add_channel(self, raw_channel_input):
         """
-        لینک‌های پیکربندی را از یک کانال تلگرام مشخص جمع‌آوری می‌کند.
-        شامل بهبودهایی برای مدیریت خطا و امتیازدهی به کانال‌ها.
-        همچنین انواع فرمت‌های متنی (مثل کد بلاک) را بررسی می‌کند.
+        Discovers a new Telegram channel and adds it to the SourceManager if enabled.
+        """
+        if settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY:
+            standardized_channel_name = source_manager._standardize_channel_username(raw_channel_input) # استفاده از تابع استانداردسازی در SourceManager
+            if standardized_channel_name:
+                if source_manager.add_telegram_channel(standardized_channel_name):
+                    stats_reporter.increment_discovered_channel_count()
+                    print(f"TelegramCollector: Discovered and added new channel: {standardized_channel_name}")
+                # else:
+                    # print(f"TelegramCollector: Discovered channel {standardized_channel_name} already known or blacklisted.")
+
+    async def collect_from_channel(self, channel_username): # تغییر نام به collect_from_channel
+        """
+        Collects config links from a specified Telegram channel.
+        Includes improvements for error handling, scoring, and parsing various text formats.
+        Also discovers new channels from links, mentions, and forwards.
         """
         collected_links = []
-        self.channel_scores[channel_username] = self.channel_scores.get(channel_username, 0)
+        # امتیازدهی اکنون توسط source_manager انجام می‌شود.
 
         try:
             entity = await self.client.get_entity(channel_username)
-            print(f"Collecting from channel: {channel_username} (ID: {entity.id})")
+            print(f"TelegramCollector: Collecting from channel: {channel_username} (ID: {entity.id})")
 
             offset_date = datetime.now(timezone.utc) - settings.TELEGRAM_MESSAGE_LOOKBACK_DURATION
 
-            initial_delay = 1 # ثانیه
-            current_delay = initial_delay * (1 + self.channel_scores[channel_username] * 0.1)
+            # تأخیر پویا بر اساس امتیاز کانال از source_manager
+            current_score = source_manager._all_telegram_scores.get(channel_username, 0)
+            # با افزایش امتیاز منفی، تأخیر بیشتر می‌شود (با فرض اینکه امتیاز مثبت خوب است و منفی بد)
+            # ما میخواهیم منابع با امتیاز پایین تر کمتر بررسی شوند
+            # اینجا تأخیر را بر اساس امتیاز فعلی منبع تنظیم می کنیم. 
+            # هرچه امتیاز منفی تر، تأخیر بیشتر.
+            # یک ضریب 0.1 برای تأثیرگذاری ملایم تر امتیاز
+            base_delay = 1 # ثانیه پایه
+            delay_multiplier = 1 + max(0, -current_score * 0.05) # اگر امتیاز منفی شد، ضریب افزایش می یابد
+
+            await asyncio.sleep(base_delay * delay_multiplier) 
 
             async for message in self.client.iter_messages(
                 entity,
@@ -110,9 +138,20 @@ class TelegramLinkCollector:
                 if not message.text:
                     continue
 
+                # 1. بررسی کل متن پیام برای لینک‌های مستقیم
                 links_from_full_text = await self._extract_links_from_text(message.text)
-                collected_links.extend(links_from_full_text)
+                for link_info in links_from_full_text:
+                    protocol = link_info.get('protocol', 'unknown')
+                    link = link_info.get('link')
+                    if link:
+                        collected_links.append(link_info) # اضافه کردن دیکشنری
+                        stats_reporter.increment_total_collected()
+                        stats_reporter.increment_protocol_count(protocol)
+                        stats_reporter.record_source_link("telegram", channel_username, protocol)
+                        # print(f"  TelegramCollector: Found {protocol} link in full text: {link}")
 
+
+                # 2. بررسی entityها برای استخراج متن از فرمت‌های خاص (مثلاً کد بلاک)
                 if message.entities:
                     for entity in message.entities:
                         start = entity.offset
@@ -121,145 +160,102 @@ class TelegramLinkCollector:
 
                         if isinstance(entity, (MessageEntityCode, MessageEntityPre, MessageEntityBlockquote, MessageEntitySpoiler)):
                             extracted_from_entity = await self._extract_links_from_text(entity_text)
-                            collected_links.extend(extracted_from_entity)
+                            for link_info in extracted_from_entity:
+                                protocol = link_info.get('protocol', 'unknown')
+                                link = link_info.get('link')
+                                if link:
+                                    collected_links.append(link_info)
+                                    stats_reporter.increment_total_collected()
+                                    stats_reporter.increment_protocol_count(protocol)
+                                    stats_reporter.record_source_link("telegram", channel_username, protocol)
+                                    # print(f"  TelegramCollector: Found {protocol} link in entity ({type(entity).__name__}): {link}")
 
                         # --- کشف کانال‌های جدید از لینک‌ها/تگ‌ها در پیام‌های تلگرام ---
-                        # کشف کانال از MessageEntityUrl (لینک مستقیم به t.me)
+                        # کشف کانال از MessageEntityTextUrl (لینک مستقیم به t.me)
                         if settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY and isinstance(entity, MessageEntityTextUrl):
                             if "t.me/" in entity.url:
-                                discovered_channel_name = standardize_channel_username(entity.url)
-                                if discovered_channel_name and not discovered_channel_name.lower().endswith("bot"):
-                                    print(f"Discovered potential channel from URL: {discovered_channel_name}")
-                                    # TODO: Add to a shared source manager (in a future step)
-                                    pass 
+                                await self._discover_and_add_channel(entity.url)
 
                         # کشف کانال از MessageEntityMention (تگ @)
                         elif settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY and isinstance(entity, (MessageEntityMention, MessageEntityMentionName)):
-                            # برای MessageEntityMentionName، نام کاربری در entity.user.username خواهد بود
-                            # برای MessageEntityMention، خود متن تگ شده entity_text است
                             if isinstance(entity, MessageEntityMention):
-                                discovered_channel_name = entity_text
+                                await self._discover_and_add_channel(entity_text)
                             elif isinstance(entity, MessageEntityMentionName) and entity.user and entity.user.username:
-                                discovered_channel_name = "@" + entity.user.username
-                            else:
-                                continue # اگر نام کاربری پیدا نشد، رد شو
-
-                            if discovered_channel_name and not discovered_channel_name.lower().endswith("bot"):
-                                print(f"Discovered potential channel from mention: {discovered_channel_name}")
-                                # TODO: Add to a shared source manager (in a future step)
-                                pass
-
+                                await self._discover_and_add_channel("@" + entity.user.username)
 
                 # --- کشف کانال‌های جدید از پیام‌های فوروارد شده ---
                 if settings.ENABLE_TELEGRAM_CHANNEL_DISCOVERY and message.fwd_from and message.fwd_from.from_id:
                     fwd_from = message.fwd_from.from_id
-                    # اگر از یک کانال فوروارد شده باشد
-                    if hasattr(fwd_from, 'channel_id'):
+                    if hasattr(fwd_from, 'channel_id'): # اگر از یک کانال فوروارد شده باشد
                         try:
                             forwarded_channel_entity = await self.client.get_entity(fwd_from.channel_id)
                             if hasattr(forwarded_channel_entity, 'username') and forwarded_channel_entity.username:
-                                discovered_channel_name = "@" + forwarded_channel_entity.username
-                                if discovered_channel_name and not discovered_channel_name.lower().endswith("bot"):
-                                    print(f"Discovered potential channel from forward: {discovered_channel_name}")
-                                    # TODO: Add to a shared source manager (in a future step)
-                                    pass
+                                await self._discover_and_add_channel("@" + forwarded_channel_entity.username)
                         except Exception as e:
-                            print(f"Could not get entity for forwarded channel ID {fwd_from.channel_id}: {e}")
-
+                            print(f"TelegramCollector: Could not get entity for forwarded channel ID {fwd_from.channel_id}: {e}")
 
             # حذف لینک‌های تکراری در این مرحله برای هر کانال
-            collected_links = list({link['link']: link for link in collected_links}.values())
+            # توجه: این لینک‌ها دیکشنری هستند، پس بر اساس 'link' فیلتر می‌کنیم
+            collected_links = list({item['link']: item for item in collected_links}.values())
 
             if not collected_links:
-                print(f"No config links found in {channel_username} within the specified criteria.")
-                self.channel_scores[channel_username] -= 1
+                print(f"TelegramCollector: No config links found in {channel_username} within the specified criteria.")
+                source_manager.update_telegram_channel_score(channel_username, -1) # امتیاز منفی برای عدم یافتن کانفیگ
             else:
-                print(f"Found {len(collected_links)} links in {channel_username}.")
-                self.channel_scores[channel_username] += 1
+                print(f"TelegramCollector: Found {len(collected_links)} unique links in {channel_username}.")
+                source_manager.update_telegram_channel_score(channel_username, 1) # امتیاز مثبت برای یافتن کانفیگ
 
-        except (FloodWaitError, PeerFloodError) as e:
-            wait_time = e.seconds if isinstance(e, FloodWaitError) else 300 # Default for PeerFlood
-            print(f"Warning: Flood/Peer Flood encountered for {channel_username}. Waiting {wait_time + current_delay}s...")
-            await asyncio.sleep(wait_time + current_delay)
-            self.channel_scores[channel_username] -= 5 # امتیاز منفی شدید
-            print(f"Resuming collection for {channel_username} after wait.")
+        except FloodWaitError as e:
+            wait_time = e.seconds
+            print(f"TelegramCollector: Warning: Flood wait of {wait_time} seconds encountered for {channel_username}. Waiting...")
+            await asyncio.sleep(wait_time + base_delay * delay_multiplier) # تأخیر بیشتر بر اساس فلود و امتیاز
+            source_manager.update_telegram_channel_score(channel_username, -5) # امتیاز منفی شدید برای فلود
+            print(f"TelegramCollector: Resuming collection for {channel_username} after wait.")
+        except PeerFloodError:
+            print(f"TelegramCollector: Warning: Peer Flood encountered for {channel_username}. Skipping for now.")
+            source_manager.update_telegram_channel_score(channel_username, -10) # امتیاز منفی بسیار شدید
         except ChannelPrivateError:
-            print(f"Error: Channel {channel_username} is private or inaccessible. Skipping.")
-            self.channel_scores[channel_username] -= 2
+            print(f"TelegramCollector: Error: Channel {channel_username} is private or inaccessible. Skipping.")
+            source_manager.update_telegram_channel_score(channel_username, -2) # امتیاز منفی
+        except (UserDeactivatedBanError, AuthKeyError) as e:
+            print(f"TelegramCollector: Critical Error for {channel_username}: {e}. Account might be banned or key invalid. Exiting collector.")
+            raise # یک خطای بحرانی که باید جمع آوری تلگرام را متوقف کند
         except RPCError as e:
-            print(f"An RPC error occurred for {channel_username}: {e}. Skipping this channel.")
-            self.channel_scores[channel_username] -= 3
+            print(f"TelegramCollector: An RPC error occurred for {channel_username}: {e}. Skipping this channel.")
+            source_manager.update_telegram_channel_score(channel_username, -3) # امتیاز منفی
         except Exception as e:
-            print(f"An unexpected error occurred while collecting from {channel_username}: {e}. Skipping this channel.")
-            self.channel_scores[channel_username] -= 1
+            print(f"TelegramCollector: An unexpected error occurred while collecting from {channel_username}: {e}. Skipping this channel.")
+            source_manager.update_telegram_channel_score(channel_username, -1) # امتیاز منفی
 
         return collected_links
 
 
-    async def disconnect(self):
-        print("Disconnecting from Telegram.")
+    async def collect_from_telegram(self): # تغییر نام به collect_from_telegram
+        """Main method to collect from all active Telegram channels."""
+        all_collected_links = []
+        active_channels = source_manager.get_active_telegram_channels() # دریافت کانال‌های فعال و مرتب شده
+        print(f"\nTelegramCollector: Starting collection from {len(active_channels)} active Telegram channels.")
+
+        if not active_channels:
+            print("TelegramCollector: No active Telegram channels to process.")
+            return []
+
+        for channel in active_channels:
+            print(f"TelegramCollector: Processing channel: {channel}")
+            # اجرای جمع آوری لینک‌ها و افزودن به لیست
+            collected_for_channel = await self.collect_from_channel(channel)
+            all_collected_links.extend(collected_for_channel)
+            # تأخیر بین پردازش هر کانال اکنون با توجه به امتیاز در collect_from_channel مدیریت می‌شود
+
+        # ثبت کانال‌های تازه تایم‌اوت شده برای گزارش
+        for channel_name, data in source_manager.timeout_telegram_channels.items():
+            # اگر این کانال در ابتدا فعال بوده و حالا تایم‌اوت شده است
+            if channel_name in active_channels and source_manager._is_timed_out_telegram_channel(channel_name):
+                 stats_reporter.add_newly_timed_out_channel(channel_name)
+
+        print(f"TelegramCollector: Finished collection. Total links from Telegram: {len(all_collected_links)}")
+        return all_collected_links
+
+    async def close(self): # اضافه کردن متد close
+        print("TelegramCollector: Disconnecting from Telegram.")
         await self.client.disconnect()
-
-def standardize_channel_username(raw_input):
-    """
-    فرمت‌های مختلف ورودی کانال تلگرام را به فرمت استاندارد @username تبدیل می‌کند.
-    همچنین یوزرنیم‌هایی که به 'bot' ختم می‌شوند را فیلتر می‌کند.
-    """
-    username = raw_input.replace('https://t.me/s/', '').replace('https://t.me/', '').replace('t.me/s/', '').replace('t.me/', '')
-
-    if username.endswith('@'):
-        username = username[:-1]
-
-    # --- جدید: فیلتر کردن ربات‌ها ---
-    if username.lower().endswith("bot"):
-        print(f"Ignoring potential bot username: {raw_input}")
-        return None # یا یک رشته خالی برگردان تا پردازش نشود
-
-    if not username.startswith('@'):
-        username = '@' + username
-    return username.strip()
-
-
-async def main():
-    API_ID = settings.TELEGRAM_API_ID
-    API_HASH = settings.TELEGRAM_API_HASH
-
-    if not API_ID or not API_HASH:
-        print("Error: TELEGRAM_API_ID and TELEGRAM_API_HASH are not set in environment variables or settings/config.json.")
-        print("Please set them before running the script. You can get them from my.telegram.org.")
-        return []
-
-    collector = TelegramLinkCollector(API_ID, API_HASH)
-
-    try:
-        await collector.connect()
-    except Exception:
-        return []
-
-    channels_file_path = settings.CHANNELS_FILE
-    if not os.path.exists(channels_file_path):
-        print(f"Error: Channels file not found at {channels_file_path}. Please create it and add channel usernames.")
-        return []
-
-    with open(channels_file_path, 'r', encoding='utf-8') as f:
-        raw_channels = [line.strip() for line in f if line.strip()]
-
-        # --- جدید: فیلتر کردن ربات‌ها از لیست ورودی ---
-        target_channels_raw = [standardize_channel_username(ch) for ch in raw_channels]
-        target_channels = [ch for ch in target_channels_raw if ch is not None] # فقط کانال‌های معتبر را نگه دار
-        target_channels = list(set(target_channels)) # حذف موارد تکراری
-
-    all_collected_links = []
-    for channel in target_channels:
-        print(f"Processing channel: {channel}")
-        collected_for_channel = await collector.get_links_from_channel(channel)
-        all_collected_links.extend(collected_for_channel)
-        await asyncio.sleep(1)
-
-    await collector.disconnect()
-
-    return all_collected_links
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
