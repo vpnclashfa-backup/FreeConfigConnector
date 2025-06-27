@@ -9,32 +9,36 @@ from src.utils.settings_manager import settings
 class OutputManager:
     def __init__(self):
         # Ensure base output and subs directories exist
+        # اطمینان از وجود پوشه‌های خروجی اصلی
         os.makedirs(settings.FULL_SUB_DIR_PATH, exist_ok=True)
         
         # Ensure plaintext and base64 main directories exist
+        # اطمینان از وجود پوشه‌های اصلی Plaintext و Base64
         os.makedirs(settings.FULL_PLAINTEXT_OUTPUT_PATH, exist_ok=True)
         os.makedirs(settings.FULL_BASE64_OUTPUT_PATH, exist_ok=True)
 
         # Create protocol-specific sub-directories within both plaintext and base64
+        # ایجاد زیرپوشه‌های پروتکل-خاص در داخل پوشه‌های Plaintext و Base64
         if settings.GENERATE_PROTOCOL_SPECIFIC_FILES:
             os.makedirs(settings.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR, exist_ok=True)
             os.makedirs(settings.FULL_BASE64_PROTOCOL_SPECIFIC_DIR, exist_ok=True)
             print(f"OutputManager: Protocol-specific directories ensured under plaintext/ and base64/.")
         
+        # Mixed file directories are implicitly created when writing the file.
+
         print("OutputManager: Core output directories for new structure ensured.")
 
 
     def save_configs(self, unique_links: List[Dict]):
         """
         Saves collected unique links into the new structured output files.
+        لینک‌های منحصر به فرد جمع‌آوری شده را در فایل‌های خروجی ساختاریافته جدید ذخیره می‌کند.
         """
         print("\nOutputManager: Saving collected configs to new structure...")
         
-        all_links_plaintext: List[str] = [] # All links for plaintext_links.txt
-        all_links_base64: List[str] = []    # All links for base64_links.txt (will be encoded)
-
-        mixed_links_plaintext: List[str] = [] # Links for plaintext/mixed_links.txt
-        mixed_links_base64: List[str] = []    # Links for base64/mixed_links.txt (will be encoded)
+        # NEW: These lists now directly represent the content for the mixed files
+        mixed_links_plaintext: List[str] = [] 
+        mixed_links_base64: List[str] = []    # This list will be encoded later
 
         protocol_specific_links_plaintext: Dict[str, List[str]] = defaultdict(list)
         protocol_specific_links_base64: Dict[str, List[str]] = defaultdict(list)
@@ -46,43 +50,37 @@ class OutputManager:
             if not protocol or not link:
                 continue
 
-            # Add to main plaintext and base64 lists
-            all_links_plaintext.append(link)
-            all_links_base64.append(link) # Will be encoded later
-
             # Add to mixed output lists if enabled and protocol matches criteria
+            # اضافه کردن به لیست‌های خروجی ترکیبی در صورت فعال بودن تنظیمات و تطابق پروتکل
             if settings.GENERATE_MIXED_PROTOCOL_FILE:
                 if settings.PROTOCOLS_FOR_MIXED_OUTPUT: # If specific protocols are defined for mixed output
                     if protocol in settings.PROTOCOLS_FOR_MIXED_OUTPUT:
                         mixed_links_plaintext.append(link)
-                        mixed_links_base64.append(link)
+                        mixed_links_base64.append(link) # For base64 mixed file
                 else: # If no specific protocols are defined, include all active protocols in mixed output
                     if protocol in settings.ACTIVE_PROTOCOLS:
                         mixed_links_plaintext.append(link)
-                        mixed_links_base64.append(link)
+                        mixed_links_base64.append(link) # For base64 mixed file
             
             # Add to protocol-specific grouping if enabled
+            # اضافه کردن به گروه‌بندی پروتکل-خاص در صورت فعال بودن تنظیمات
             if settings.GENERATE_PROTOCOL_SPECIFIC_FILES:
                 if protocol in settings.ACTIVE_PROTOCOLS: # Only save for active protocols
                     protocol_specific_links_plaintext[protocol].append(link)
-                    protocol_specific_links_base64[protocol].append(link) # Will be encoded later
+                    protocol_specific_links_base64[protocol].append(link) # For base64 protocol-specific files
         
-        # Sort all link lists alphabetically for consistency
-        all_links_plaintext.sort()
-        all_links_base64.sort()
+        # Sort all relevant link lists alphabetically for consistency
         mixed_links_plaintext.sort()
         mixed_links_base64.sort()
 
-        # Save main plaintext and base64 files
-        self._write_plaintext_file(settings.PLAINTEXT_LINKS_FILE, all_links_plaintext)
-        self._write_base64_encoded_file(settings.BASE64_LINKS_FILE, all_links_base64)
-
         # Save mixed protocol files (if enabled)
+        # ذخیره فایل‌های پروتکل ترکیبی (در صورت فعال بودن)
         if settings.GENERATE_MIXED_PROTOCOL_FILE:
             self._write_plaintext_file(settings.PLAINTEXT_MIXED_FILE, mixed_links_plaintext)
             self._write_base64_encoded_file(settings.BASE64_MIXED_FILE, mixed_links_base64)
 
         # Save protocol-specific files (if enabled)
+        # ذخیره فایل‌های پروتکل-خاص (در صورت فعال بودن)
         if settings.GENERATE_PROTOCOL_SPECIFIC_FILES:
             self._write_protocol_specific_files_pair(protocol_specific_links_plaintext, protocol_specific_links_base64)
 
