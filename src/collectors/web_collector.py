@@ -6,7 +6,8 @@ import os
 import json
 import asyncio
 import traceback
-
+from typing import Optional, List, Dict # NEW: Import Optional, List, Dict for type hints
+    
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
@@ -33,6 +34,7 @@ class WebCollector:
             source_manager.update_website_score(url, -settings.COLLECTION_TIMEOUT_SECONDS) # Decrease score on timeout
             return None
         except httpx.HTTPStatusError as e:
+            # Handle 404 (Not Found), 403 (Forbidden), etc.
             print(f"WebCollector: HTTP Error {e.response.status_code} fetching {url}: {e.response.text.strip()[:100]}...")
             if e.response.status_code == 404: # Not Found - may indicate dead link
                 source_manager.update_website_score(url, -50) # Strong penalty
@@ -72,7 +74,7 @@ class WebCollector:
             if source_manager.add_website(url):
                 stats_reporter.increment_discovered_website_count()
                 print(f"WebCollector: Discovered and added new website URL: {url}")
-
+        
     async def collect_from_website(self, url: str) -> List[Dict]:
         """
         Collects config links from a single website URL, parses content, and updates stats.
@@ -87,7 +89,7 @@ class WebCollector:
 
         # Use ConfigParser to parse the content
         parsed_links_info = self.config_parser.parse_content(content)
-
+        
         if not parsed_links_info and not settings.IGNORE_UNPARSEABLE_CONTENT:
             print(f"WebCollector: Could not parse any links from {url}. Content snippet: {content[:100]}...")
             source_manager.update_website_score(url, -2) # Small negative score if content fetched but no valid links
@@ -98,7 +100,7 @@ class WebCollector:
         for link_info in parsed_links_info:
             protocol = link_info.get('protocol', 'unknown')
             link = link_info.get('link')
-
+            
             if not link:
                 continue
 
@@ -140,8 +142,12 @@ class WebCollector:
         for url in active_websites:
             # Dynamic delay for web sources could be implemented here based on score
             # For now, relying on httpx timeout and error handling.
+            # current_score = source_manager._all_website_scores.get(url, 0)
+            # base_delay = 0.5 # seconds, smaller for web generally
+            # delay_multiplier = 1 + max(0, -current_score * 0.1) # Potentially higher impact for web
+            # await asyncio.sleep(base_delay * delay_multiplier)
             tasks.append(self.collect_from_website(url))
-
+        
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for i, result in enumerate(results):
@@ -152,7 +158,7 @@ class WebCollector:
                 source_manager.update_website_score(url, -20) # Penalize for unhandled exceptions
             elif result:
                 all_collected_links.extend(result)
-
+        
         # Record newly timed-out websites for the report
         for website_name, data in source_manager.timeout_websites.items():
             if website_name in active_websites and source_manager._is_timed_out_website(website_name):
@@ -165,3 +171,4 @@ class WebCollector:
         """Closes the HTTP client session."""
         await self.client.aclose()
         print("WebCollector client closed.")
+
