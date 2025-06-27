@@ -139,6 +139,10 @@
       "juicity"
     ],
     "output_header_base64_enabled": true,
-    "_comment_": "آیا هدر Base64 را در فایل خروجی base64_links.txt قرار دهد؟"
+    "_comment_": "آیا هدر Base64 را در فایل خروجی base64_links.txt قرار دهد؟",
+    "generate_protocol_specific_files": true,
+    "_comment_": "آیا برای هر پروتکل فعال، یک فایل خروجی جداگانه تولید کند؟",
+    "protocol_specific_dir": "protocols"
+    "_comment_": "نام پوشه برای فایل های خروجی پروتکل های جداگانه (مثلاً output/subs/protocols/vmess.txt)"
   }
 }
