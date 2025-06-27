@@ -4,7 +4,7 @@ import os
 import json
 from src.utils.settings_manager import settings
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Set # NEW: Import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set # Added List, Dict, Optional, Set
 
 class SourceManager:
     def __init__(self):
@@ -203,7 +203,7 @@ class SourceManager:
 
     def get_timed_out_telegram_channels(self) -> List[Dict]:
         """Returns a list of Telegram channels currently in timeout state, sorted by score (lowest first)."""
-        timeout_list: List[Dict] = [] # Use Dict to hold channel and score
+        timeout_list: List[Dict] = []
         for channel, data in self.timeout_telegram_channels.items():
             timeout_list.append({"channel": channel, "score": data.get("score", 0), "last_timeout": data.get("last_timeout")})
         
@@ -273,5 +273,5 @@ class SourceManager:
             username = '@' + username
         return username.strip()
 
-# ایجاد یک نمونه سراسری از SourceManager
+# Create a global instance of SourceManager
 source_manager = SourceManager()
