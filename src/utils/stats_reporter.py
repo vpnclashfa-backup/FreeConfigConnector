@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from typing import Dict, List, Set, Optional
 
-# import settings inside generate_report where needed to avoid circular dependency on init
-# from src.utils.settings_manager import settings as current_settings
+# Import settings here to avoid circular dependency
+# from src.utils.settings_manager import settings as current_settings # This import is handled within generate_report
 
 class StatsReporter:
     def __init__(self):
@@ -18,7 +18,7 @@ class StatsReporter:
         self.total_collected_links: int = 0
         self.unique_collected_links: int = 0
         self.protocol_counts: Dict[str, int] = {}
-        self.source_link_counts: Dict[str, Dict[str, Dict[str, int]]] = {} # {source_type: {source_name: {protocol: count}}}
+        self.source_link_counts: Dict[str, Dict[str, Dict[str, int]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(int))) # type: ignore
         self.discovered_channel_count: int = 0
         self.discovered_website_count: int = 0
         self.initial_active_telegram_channels: int = 0
@@ -53,13 +53,9 @@ class StatsReporter:
 
     def record_source_link(self, source_type: str, source_name: str, protocol: str):
         """Records a link found from a specific source."""
-        if source_type not in self.source_link_counts:
-            self.source_link_counts[source_type] = {}
-        if source_name not in self.source_link_counts[source_type]:
-            self.source_link_counts[source_type][source_name] = {}
-        
-        self.source_link_counts[source_type][source_name][protocol] = \
-            self.source_link_counts[source_type][source_name].get(protocol, 0) + 1
+        # Use direct assignment to ensure it's recorded. defaultdict will create necessary nested dicts.
+        self.source_link_counts[source_type][source_name][protocol] += 1 
+
 
     def increment_discovered_channel_count(self):
         """Increments the count of newly discovered Telegram channels."""
@@ -80,10 +76,9 @@ class StatsReporter:
     def generate_report(self, source_manager_instance) -> str:
         """
         Generates a comprehensive report of the collection process in Farsi Markdown format.
-        گزارش جامعی از فرآیند جمع‌آوری را در قالب Markdown فارسی تولید می‌کند.
         """
-        # Import settings here to avoid circular dependency
-        from src.utils.settings_manager import settings as current_settings
+        from src.utils.settings_manager import settings as current_settings # Import inside function
+        from src.utils.source_manager import source_manager as current_source_manager # Import here for clarity
 
         report_lines: List[str] = []
 
@@ -91,7 +86,6 @@ class StatsReporter:
         report_lines.append(f"آخرین به‌روزرسانی: {datetime.now().strftime('%Y/%m/%d %H:%M:%S')}")
         report_lines.append("---")
 
-        # زمان‌بندی کلی
         report_lines.append("## ۱. خلاصه‌ی زمان‌بندی")
         report_lines.append(f"- زمان شروع: {self.start_time.strftime('%Y-%m-%d %H:%M:%S') if self.start_time else 'نامشخص'}")
         report_lines.append(f"- زمان پایان: {self.end_time.strftime('%Y-%m-%d %H:%M:%S') if self.end_time else 'نامشخص'}")
@@ -100,13 +94,11 @@ class StatsReporter:
             report_lines.append(f"- مدت زمان اجرا: {str(duration).split('.')[0]}")
         report_lines.append("\n")
 
-        # خلاصه‌ی لینک‌ها
         report_lines.append("## ۲. خلاصه‌ی لینک‌ها")
         report_lines.append(f"- مجموع لینک‌های جمع‌آوری شده (خام): **{self.total_collected_links}**")
         report_lines.append(f"- مجموع لینک‌های منحصر به فرد (پس از حذف تکراری‌ها): **{self.unique_collected_links}**")
         report_lines.append("\n")
 
-        # تفکیک بر اساس پروتکل
         report_lines.append("### ۲.۱. تفکیک لینک‌ها بر اساس پروتکل")
         if self.protocol_counts:
             report_lines.append("| پروتکل | تعداد لینک |")
@@ -117,7 +109,6 @@ class StatsReporter:
             report_lines.append("هیچ لینکی بر اساس پروتکل جمع‌آوری نشده است.")
         report_lines.append("\n")
 
-        # آمار مدیریت منابع
         report_lines.append("## ۳. آمار مدیریت منابع")
         report_lines.append(f"- کانال‌های فعال تلگرام (ابتدای اجرا): {self.initial_active_telegram_channels}")
         report_lines.append(f"- وب‌سایت‌های فعال (ابتدای اجرا): {self.initial_active_websites}")
@@ -139,14 +130,12 @@ class StatsReporter:
             report_lines.append("\nهیچ وب‌سایتی جدیدی در این اجرا تایم‌اوت نشده است.")
         report_lines.append("\n")
 
-        # وضعیت فعلی منابع (فعال و تایم‌اوت شده)
         report_lines.append("## ۴. وضعیت فعلی منابع (فعال و تایم‌اوت شده)")
         
-        # کانال‌های تلگرام
         report_lines.append("\n### ۴.۱. کانال‌های تلگرام:")
         active_telegram_channels_with_scores: List[tuple[str, int]] = [
             (ch, source_manager_instance._all_telegram_scores.get(ch, 0))
-            for ch in source_manager_instance.get_active_telegram_channels() # این متد خودش مرتب شده بر اساس امتیاز
+            for ch in source_manager_instance.get_active_telegram_channels()
         ]
         if active_telegram_channels_with_scores:
             report_lines.append("\n**فعال (مرتب شده بر اساس امتیاز - بالاترین امتیاز اول):**")
@@ -171,10 +160,10 @@ class StatsReporter:
                 recovery_status = ""
                 if last_timeout_dt:
                     time_since_timeout = datetime.now(last_timeout_dt.tzinfo if last_timeout_dt.tzinfo else timezone.utc) - last_timeout_dt
-                    if time_since_timeout >= current_settings.TIMEOUT_RECOVERY_DURATION: # از current_settings استفاده شود
+                    if time_since_timeout >= current_settings.TIMEOUT_RECOVERY_DURATION:
                         recovery_status = "آماده بازیابی"
                     else:
-                        remaining_time = current_settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout # از current_settings استفاده شود
+                        remaining_time = current_settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout
                         days = remaining_time.days
                         seconds = remaining_time.seconds
                         hours = seconds // 3600
@@ -187,11 +176,10 @@ class StatsReporter:
             report_lines.append("هیچ کانال تلگرامی در حال حاضر تایم‌اوت نشده است.")
         report_lines.append("\n")
 
-        # وب‌سایت‌ها
         report_lines.append("### ۴.۲. وب‌سایت‌ها:")
         active_websites_with_scores: List[tuple[str, int]] = [
             (ws, source_manager_instance._all_website_scores.get(ws, 0))
-            for ws in source_manager_instance.get_active_websites() # این متد خودش مرتب شده
+            for ws in source_manager_instance.get_active_websites()
         ]
         if active_websites_with_scores:
             report_lines.append("\n**فعال (مرتب شده بر اساس امتیاز - بالاترین امتیاز اول):**")
@@ -203,6 +191,7 @@ class StatsReporter:
             report_lines.append("هیچ وب‌سایت فعالی در حال حاضر وجود ندارد.")
 
         timed_out_websites_with_scores: List[Dict] = source_manager_instance.get_timed_out_websites()
+
         if timed_out_websites_with_scores:
             report_lines.append("\n**تایم‌اوت شده (مرتب شده بر اساس امتیاز - پایین‌ترین امتیاز اول):**")
             report_lines.append("| وب‌سایت | امتیاز | آخرین تایم‌اوت | وضعیت بازیابی |")
@@ -216,10 +205,10 @@ class StatsReporter:
                 recovery_status = ""
                 if last_timeout_dt:
                     time_since_timeout = datetime.now(last_timeout_dt.tzinfo if last_timeout_dt.tzinfo else timezone.utc) - last_timeout_dt
-                    if time_since_timeout >= current_settings.TIMEOUT_RECOVERY_DURATION: # از current_settings استفاده شود
+                    if time_since_timeout >= current_settings.TIMEOUT_RECOVERY_DURATION:
                         recovery_status = "آماده بازیابی"
                     else:
-                        remaining_time = current_settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout # از current_settings استفاده شود
+                        remaining_time = current_settings.TIMEOUT_RECOVERY_DURATION - time_since_timeout
                         days = remaining_time.days
                         seconds = remaining_time.seconds
                         hours = seconds // 3600
@@ -232,13 +221,10 @@ class StatsReporter:
             report_lines.append("هیچ وب‌سایتی در حال حاضر تایم‌اوت نشده است.")
         report_lines.append("\n")
 
-
-        # تفکیک لینک‌های جمع‌آوری شده بر اساس منبع
         report_lines.append("## ۵. تفکیک لینک‌های جمع‌آوری شده بر اساس منبع")
         if self.source_link_counts:
             for source_type, sources in self.source_link_counts.items():
                 report_lines.append(f"\n### ۵.{'۱' if source_type == 'telegram' else '۲'}. منابع {'تلگرام' if source_type == 'telegram' else 'وب‌سایت'}:")
-                # مرتب‌سازی منابع بر اساس مجموع لینک‌های جمع‌آوری شده (نزولی)
                 sorted_sources = sorted(sources.items(), key=lambda item: sum(item[1].values()), reverse=True)
                 
                 report_lines.append("| منبع | مجموع لینک‌ها | تفکیک پروتکل |")
@@ -256,5 +242,5 @@ class StatsReporter:
         
         return "\n".join(report_lines)
 
-# ایجاد یک نمونه سراسری از StatsReporter
+# Create a global instance of StatsReporter
 stats_reporter = StatsReporter()
