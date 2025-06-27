@@ -4,10 +4,17 @@ import base64
 import json
 import re
 import yaml # pip install PyYAML
-from typing import List, Dict, Optional, Tuple # Added Tuple
-from urllib.parse import unquote, urlparse
+from typing import List, Dict, Optional, Tuple
+from urllib.parse import unquote, urlparse # For ConfigValidator
 
-# NEW: Inline ConfigValidator class (can be moved to src/utils/config_validator.py if preferred)
+# NEW: Import from centralized protocol definitions
+from src.utils.protocol_definitions import get_protocol_regex_patterns, get_combined_protocol_regex
+
+# Re-using settings directly from utils
+from src.utils.settings_manager import settings
+
+# Inline ConfigValidator class (as decided, for simplicity in single file update)
+# This class contains utility methods for validating and cleaning config strings.
 class ConfigValidator:
     @staticmethod
     def is_base64(s: str) -> bool:
@@ -53,7 +60,6 @@ class ConfigValidator:
         """Cleans a Vmess link by stripping extra characters after base64 part."""
         if config.startswith("vmess://"):
             base64_part = config[8:]
-            # Find the end of base64 part by looking for non-base64 chars or end of string
             clean_base64_part = re.match(r'[A-Za-z0-9+/=_-]*', base64_part)
             if clean_base64_part:
                 return f"vmess://{clean_base64_part.group(0).strip()}"
@@ -73,7 +79,7 @@ class ConfigValidator:
             if not config.startswith('vmess://'):
                 return False
             base64_part = config[8:]
-            decoded = ConfigValidator.decode_base64_text(base64_part) # Use general text decoder
+            decoded = ConfigValidator.decode_base64_text(base64_part)
             if decoded:
                 json.loads(decoded) # Vmess payload is JSON
                 return True
@@ -87,16 +93,19 @@ class ConfigValidator:
         try:
             if config.startswith('tuic://'):
                 parsed = urlparse(config)
-                # Basic check: should have a network location (host:port)
                 return bool(parsed.netloc and ':' in parsed.netloc)
             return False
         except:
             return False
 
     @staticmethod
-    def is_valid_protocol_prefix(text: str, protocols: List[str]) -> bool:
-        """Checks if text starts with any of the given protocol prefixes."""
-        return any(text.startswith(p) for p in protocols)
+    def is_valid_protocol_prefix(config_str: str) -> bool:
+        """Checks if a string starts with a known protocol prefix."""
+        # Use a generic regex to check for any protocol prefix from our map
+        # This will be PROTOCOL_REGEX_MAP from protocol_definitions, but here it's implicit
+        # (It should be any string ending with '://')
+        return bool(re.match(r'^[a-zA-Z0-9]+\:\/\/', config_str))
+
 
     @staticmethod
     def clean_config_string(config: str) -> str:
@@ -104,55 +113,14 @@ class ConfigValidator:
         Removes common junk characters, emojis, and excessive whitespace from a config string.
         """
         # Remove common emojis and non-printable characters
-        config = re.sub(r'[\U0001F300-\U0001F6FF\U00002600-\U000027BF\ufe00-\ufe0f\u200b-\u200d\uFEFF\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', config)
+        config = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\ufe00-\ufe0f\u200b-\u200d\uFEFF\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', config)
         # Remove numbers with circle Unicode variations (e.g., 1️⃣, 2️⃣)
         config = re.sub(r'\d{1,2}\ufe0f?', '', config)
         # Remove common Farsi/Arabic joining characters or repeated symbols like 🛜 ❓ ❗️ 🔤 etc
-        config = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u06F0-\u06F9\u200B-\u200F\u0640\u202A-\u202E\u2066-\u2069\uFE00-\uFE0F\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\ufeff\u200d\s]*[\u2705\u2714\u274c\u274e\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u26A0\u26A1\u26D4\u26C4\u26F0-\u26F5\u26FA\u26FD\u2700-\u27BF\u23F3\u231B\u23F8-\u23FA\u2B50\u2B55\u25AA\u25AB\u25FB\u25FC\u25FD\u25FE\u2B1B\u2B1C\u274C\u274E\u2753\u2754\u2755\u2795\u2796\u2797\u27B0\u27BF\u2934\u2935\u2B06\u2B07\u2B1B\u2B1C\u2B50\u2B55\u2BFF\U0001F0CF\U0001F170-\U0001F171\U0001F17E-\U0001F17F\U0001F18E\U0001F1F0\U0001F1F0-\U0001F1FF\U0001F200-\U0001F251\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002190-\U000021FF\U00002300-\U000023FF\U000024C2\U000025AA-\U000025FE\U00002600-\U000026FF\U00002700-\U000027BF\u200B-\u200D\uFE0F\u200C-\u200D\uFE0F]*[\s\uFEFF\u200B-\u200D\u200E\u200F\u202F\u205F\u00A0\u2000-\u200A\u3000\u0009\u000A\u000B\u000C\u000D\u0085\u2028\u2029\u1680\u200B\u200C\u200D\u200E\u200F\u202F\u205F\u3000\u00A0\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u200B-\u200D\u200E-\u200F\u2028-\u2029\u205F\u3000\u000D\u000A]+', '', config).strip()
-        # Remove any remaining unwanted characters (e.g., from your sample: 5️⃣ 📥)
-        config = re.sub(r'[\u2460-\u2469\u24EA\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u2705\u2714\u274c\u274e\u26A0\u26A1\u26D4\u26C4\u26F0-\u26F5\u26FA\u26FD\u2700-\u27BF\u23F3\u231B\u23F8-\u23FA\u2B50\u2B55\u25AA\u25AB\u25FB\u25FC\u25FD\u25FE\u2B1B\u2B1C\u274C\u274E\u2753\u2754\u2755\u2795\u2796\u2797\u27B0\u27BF\u2934\u2935\u2B06\u2B07\u2B1B\u2B1C\u2B50\u2B55\u2BFF\U0001F0CF\U0001F170-\U0001F171\U0001F17E-\U0001F17F\U0001F18E\U0001F1F0\U0001F1F0-\U0001F1FF\U0001F200-\U0001F251\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF]+', '', config)
+        # This regex is specifically tuned for the provided sample and might need further adjustments
+        config = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u06F0-\u06F9\u200B-\u200F\u0640\u202A-\u202E\u2066-\u2069\uFE00-\uFE0F\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\ufeff\u200d\s]*[\u2705\u2714\u274c\u274e\u2B05-\u2B07\u2B1B\u2B1C\u2B50\u2B55\u26A0\u26A1\u26D4\u26C4\u26F0-\u26F5\u26FA\u26FD\u2700-\u27BF\u23F3\u231B\u23F8-\u23FA\u2B50\u2B55\u25AA\u25AB\u25FB\u25FC\u25FD\u25FE\u2B1B\u2B1C\u274C\u274E\u2753\u2754\u2755\u2795\u2796\u2797\u27B0\u27BF\u2934\u2935\u2B06\u2B07\u2B1B\u2B1C\u2B50\u2B55\u2BFF\U0001F0CF\U0001F170-\U0001F171\U0001F17E-\U0001F17F\U0001F18E\U0001F1F0\U0001F1F0-\U0001F1FF\U0001F200-\U0001F251\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF]+', '', config)
         config = re.sub(r'\s+', ' ', config) # Reduce multiple spaces to single space
         return config.strip()
-
-    @staticmethod
-    def is_valid_config_start(config_str: str) -> bool:
-        """Checks if a string starts with a known protocol prefix."""
-        protocols = ['vmess://', 'vless://', 'ss://', 'trojan://', 'hysteria://', 'hysteria2://', 'hy2://', 'tuic://', 'wireguard://', 'ssh://', 'warp://', 'juicity://', 'http://', 'https://', 'socks5://', 'ssconf://']
-        return any(config_str.startswith(p) for p in protocols)
-
-
-    @classmethod
-    def validate_protocol_config(cls, config: str, protocol: str) -> bool:
-        """Validates a config string based on its detected protocol."""
-        try:
-            if not config.startswith(protocol):
-                return False
-
-            if protocol == 'vmess://':
-                return cls.is_vmess_config(config)
-            elif protocol == 'tuic://':
-                return cls.is_tuic_config(config)
-            elif protocol in ['ss://', 'vless://', 'trojan://', 'hysteria://', 'hysteria2://', 'hy2://', 'wireguard://', 'ssh://', 'warp://', 'juicity://', 'http://', 'https://', 'socks5://', 'ssconf://']:
-                # For many protocols, a basic URL parse and check for network location might suffice
-                # or ensure it decodes if it's base64 encoded.
-                parsed = urlparse(config)
-                if not parsed.netloc: # Must have host:port
-                    return False
-                
-                # For protocols that might have base64 encoded payloads (e.g., ss, vless sometimes)
-                # We can try to decode part of it if it looks like base64.
-                # Example: for ss:// base64encoded@host:port
-                if protocol == 'ss://':
-                    parts = config[5:].split('@') # Skip ss://
-                    if len(parts) > 1 and cls.is_base64(parts[0]):
-                        return True
-                    return False # ss must have base64 part
-                
-                # Basic check for other protocols: just ensure it's a valid URL-like string
-                return True
-            return False
-        except Exception:
-            return False
 
     @staticmethod
     def split_configs_from_text(text: str, protocols_regex: re.Pattern) -> List[str]:
@@ -179,36 +147,63 @@ class ConfigValidator:
             
             raw_config_candidate = text[start_index:end_index].strip()
             
-            # Clean before adding. This cleaning removes junk that might be *within* a config.
+            # Additional cleaning for the extracted segment.
             cleaned_candidate = ConfigValidator.clean_config_string(raw_config_candidate)
             
-            if cleaned_candidate and ConfigValidator.is_valid_config_start(cleaned_candidate):
+            # Now, apply protocol-specific cleaning before validation
+            # This is important for vmess:// and hysteria2:// which have specific end patterns.
+            if cleaned_candidate.startswith("vmess://"):
+                cleaned_candidate = ConfigValidator.clean_vmess_config(cleaned_candidate)
+            elif cleaned_candidate.startswith("hy2://"):
+                cleaned_candidate = ConfigValidator.normalize_hysteria2_protocol(cleaned_candidate)
+            # Add other protocol-specific cleaning here if needed
+            
+            if cleaned_candidate and ConfigValidator.is_valid_protocol_prefix(cleaned_candidate):
                 extracted_raw_configs.append(cleaned_candidate)
         
         return extracted_raw_configs
 
 
-from src.utils.settings_manager import settings
-# Combined regex for all active protocols, compiled once for efficiency
-_combined_active_protocol_regex = re.compile(
-    '|'.join([re.escape(p + '://') for p in settings.ACTIVE_PROTOCOLS if p != 'ssconf']), # ssconf is a special case
-    re.IGNORECASE
-)
+    @classmethod
+    def validate_protocol_config(cls, config: str, protocol: str) -> bool:
+        """Validates a config string based on its detected protocol."""
+        try:
+            if not config.startswith(protocol):
+                return False
+
+            if protocol == 'vmess': # Note: pass protocol name without '://' to validator methods
+                return cls.is_vmess_config(config)
+            elif protocol == 'tuic':
+                return cls.is_tuic_config(config)
+            elif protocol == 'ss': # ss requires base64 encoded payload
+                parts = config[len('ss://'):].split('@')
+                if len(parts) > 1: # Should have method:password@server:port
+                    return cls.is_base64(parts[0]) # Method:password part must be base64
+                return False # Invalid SS format
+            elif protocol in ['vless', 'trojan', 'hysteria', 'hysteria2', 'wireguard', 'ssh', 'warp', 'juicity', 'http', 'https', 'socks5', 'mieru', 'snell', 'anytls']:
+                # For many protocols, a basic URL parse and check for netloc (host:port) might suffice.
+                parsed = urlparse(config)
+                return bool(parsed.netloc) # Must have host:port
+
+            return False
+        except Exception:
+            return False
+
 
 class ConfigParser:
     def __init__(self):
-        self.protocol_regex_patterns = get_config_regex_patterns()
+        # Use get_protocol_regex_patterns from centralized definitions
+        self.protocol_regex_patterns_map = get_protocol_regex_patterns()
         self.config_validator = ConfigValidator() # Instantiate the validator
-        # Compile patterns for efficiency
+        
+        # Compile patterns for efficiency (for searching within text)
         self.compiled_patterns = {
             p: re.compile(pattern, re.IGNORECASE) 
-            for p, pattern in self.protocol_regex_patterns.items()
+            for p, pattern in self.protocol_regex_patterns_map.items()
         }
-        # A combined regex pattern to find ANY known protocol link. This is for splitting
-        self.combined_protocol_regex = re.compile(
-            '|'.join([re.escape(pattern_prefix) for pattern_prefix in self.protocol_regex_patterns.keys()]), # Use keys directly, e.g., 'ss://'
-            re.IGNORECASE
-        )
+        
+        # Get the combined regex for splitting from centralized definitions
+        self.combined_protocol_regex = get_combined_protocol_regex()
 
     def _extract_direct_links(self, text_content: str) -> List[Dict]:
         """
@@ -223,12 +218,14 @@ class ConfigParser:
 
         for candidate in config_candidates:
             # Try to match each candidate against specific protocol patterns
-            for protocol, compiled_pattern in self.compiled_patterns.items():
-                if compiled_pattern.match(candidate): # Use match() to check from start of string
-                    # Validate the extracted config more deeply
-                    if self.config_validator.validate_protocol_config(candidate, protocol):
-                        found_links.append({'protocol': protocol, 'link': candidate})
-                        break # Move to the next candidate once a valid match is found
+            for protocol_name, compiled_pattern in self.compiled_patterns.items():
+                # Use match() to check if the candidate starts with the pattern (and is a full match from start)
+                if compiled_pattern.match(candidate): 
+                    # Validate the extracted config more deeply using the validator
+                    # Pass the protocol name (e.g., 'vmess') not the full 'vmess://'
+                    if self.config_validator.validate_protocol_config(candidate, protocol_name):
+                        found_links.append({'protocol': protocol_name, 'link': candidate})
+                        break # Move to the next candidate once a valid match is found for this chunk
         
         return found_links
 
@@ -241,7 +238,7 @@ class ConfigParser:
         if decoded_str:
             # Check if decoded content looks like a list of links or another parsable format
             if len(decoded_str) > 10 and (self.combined_protocol_regex.search(decoded_str) or 
-                                          self.config_validator.is_valid_config_start(decoded_str)):
+                                          self.config_validator.is_valid_protocol_prefix(decoded_str)):
                 print("Successfully decoded Base64 content and it contains potential links.")
                 return decoded_str
             print("Base64 decoded, but content does not appear to contain configs or valid protocol links.")
@@ -268,11 +265,14 @@ class ConfigParser:
                     # Attempt to reconstruct SS/SSR links from dict, then validate
                     if proxy_obj.get('type', '').lower() == 'ss' and all(k in proxy_obj for k in ['cipher', 'password', 'server', 'port']):
                         try:
+                            # Reconstruct a shadowssocks link
                             method_pass = f"{proxy_obj['cipher']}:{proxy_obj['password']}"
                             encoded_method_pass = base64.b64encode(method_pass.encode()).decode()
                             ss_link = f"ss://{encoded_method_pass}@{proxy_obj['server']}:{proxy_obj['port']}"
-                            if 'name' in proxy_obj: ss_link += f"#{proxy_obj['name']}"
-                            if self.config_validator.validate_protocol_config(ss_link, 'ss://'):
+                            if 'name' in proxy_obj:
+                                ss_link += f"#{proxy_obj['name']}"
+                            
+                            if self.config_validator.validate_protocol_config(ss_link, 'ss'): # Pass 'ss' not 'ss://'
                                 extracted_links.append({'protocol': 'ss', 'link': ss_link})
                         except Exception as e:
                             print(f"Error reconstructing SS link from Clash: {e}")
@@ -293,7 +293,7 @@ class ConfigParser:
             
             print("Successfully parsed Clash config and extracted potential links.")
         except yaml.YAMLError:
-            pass
+            pass # Not a valid YAML (Clash) config
         except Exception as e:
             print(f"Error parsing Clash config: {e}")
         return extracted_links
