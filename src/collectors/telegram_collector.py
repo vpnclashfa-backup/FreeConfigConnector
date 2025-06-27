@@ -8,18 +8,18 @@ import json
 from datetime import datetime, timedelta, timezone
 import asyncio 
 import traceback
-from typing import Optional, List, Dict # CORRECT: Optional, List, Dict are imported
-    
+from typing import Optional, List, Dict # Added Optional, List, Dict
+
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
 
 # این تابع الگوهای RegEx را برای پروتکل‌های مختلف VPN/پروکسی تعریف می‌کند.
-def get_config_regex_patterns():
-    patterns = {}
+def get_config_regex_patterns() -> Dict[str, str]:
+    patterns: Dict[str, str] = {}
     base_pattern_suffix = r"[^\s\<\>\[\]\{\}\(\)\"\'\`]+"
 
-    protocol_regex_map = {
+    protocol_regex_map: Dict[str, str] = {
         "http": r"https?:\/\/" + base_pattern_suffix,
         "socks5": r"socks5:\/\/" + base_pattern_suffix,
         "ss": r"ss:\/\/[a-zA-Z0-9\+\/=]{20,}(?:@[a-zA-Z0-9\.\-]+:\d{1,5})?(?:#.*)?",
@@ -97,7 +97,7 @@ class TelegramCollector:
         """
         Extracts config links from a given text content using defined regex patterns.
         """
-        found_links = []
+        found_links: List[Dict] = []
         for protocol, pattern in self.config_patterns.items():
             matches = re.findall(pattern, text_content, re.IGNORECASE)
             for link in matches:
@@ -135,7 +135,7 @@ class TelegramCollector:
                 if source_manager.add_telegram_channel(standardized_channel_name):
                     stats_reporter.increment_discovered_channel_count()
                     print(f"TelegramCollector: Discovered and added new channel: {standardized_channel_name}")
-            
+        
     async def collect_from_channel(self, channel_username: str) -> List[Dict]:
         """
         Collects config links from a single Telegram channel page (t.me/s/).
@@ -155,7 +155,7 @@ class TelegramCollector:
             source_manager.update_telegram_channel_score(channel_username, -1)
             return []
 
-        messages_with_dates = []
+        messages_with_dates: List[tuple[Optional[datetime], BeautifulSoup, BeautifulSoup]] = [] # Explicitly typed
         for msg_wrap in messages_html:
             message_text_div = msg_wrap.find('div', class_='tgme_widget_message_text')
             if not message_text_div: continue
@@ -165,7 +165,7 @@ class TelegramCollector:
         
         messages_with_dates.sort(key=lambda x: x[0] if x[0] else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
 
-        processed_message_count = 0
+        processed_message_count: int = 0
         for msg_date, message_text_div, msg_wrap in messages_with_dates:
             if not self._is_config_recent(msg_date):
                 continue
@@ -214,7 +214,7 @@ class TelegramCollector:
     async def collect_from_telegram(self) -> List[Dict]:
         """Main method to collect from all active Telegram channels."""
         all_collected_links: List[Dict] = []
-        active_channels = source_manager.get_active_telegram_channels()
+        active_channels: List[str] = source_manager.get_active_telegram_channels()
 
         if not active_channels:
             print("TelegramCollector: No active Telegram channels to process.")
@@ -235,7 +235,7 @@ class TelegramCollector:
             elif result:
                 all_collected_links.extend(result)
         
-        for channel_name, data in source_manager.timeout_telegram_channels.items():
+        for channel_name in list(source_manager.timeout_telegram_channels.keys()): # Iterate over a copy to avoid RuntimeError
             if channel_name in active_channels and source_manager._is_timed_out_telegram_channel(channel_name):
                 stats_reporter.add_newly_timed_out_channel(channel_name)
 
