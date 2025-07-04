@@ -80,15 +80,16 @@
     "discovered_websites_file": "discovered_websites.txt",
     "timeout_telegram_channels_file": "timeout_telegram_channels.json",
     "timeout_websites_file": "timeout_websites.json",
-    
+
     "sub_dir": "subs",
-    
+
     "plaintext_output_dir": "plaintext",
     "base64_output_dir": "base64",
-    
+
     "mixed_links_file": "mixed_links.txt",
     "protocol_specific_sub_dir": "protocols",
-    "report_file": "report.md"
+    "report_file": "report.md",
+    "error_warning_log_file": "error_warnings.log"  // این خط اضافه/اصلاح شده است.
   },
 
   "output_settings": {
@@ -107,5 +108,12 @@
     "output_header_base64_enabled": true,
     "generate_protocol_specific_files": true,
     "generate_mixed_protocol_file": true
+  },
+  "filters": {
+    "ignore_github_gist_urls": false,
+    "ignore_github_raw_urls": false,
+    "telegram_channel_ignore_patterns": [
+      "bot$"
+    ]
   }
 }
