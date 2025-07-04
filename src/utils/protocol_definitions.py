@@ -58,7 +58,7 @@ def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValida
         if protocol_name in PROTOCOL_INFO_MAP:
             active_info[protocol_name] = PROTOCOL_INFO_MAP[protocol_name]
         else:
-            if protocol_name != 'reality':
+            if protocol_name != 'reality': # 'reality' has no fixed prefix like 'reality://', so it's a special case regex in ConfigValidator.
                 print(f"protocol_definitions: WARNING: Protocol '{protocol_name}' in settings.ACTIVE_PROTOCOLS is not defined in PROTOCOL_INFO_MAP. Using generic handler.")
             active_info[protocol_name] = {"prefix": f"{protocol_name}://", "validator": BaseValidator}
     return active_info
@@ -66,48 +66,46 @@ def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValida
 def get_combined_protocol_full_regex() -> re.Pattern:
     """
     Returns a compiled RegEx pattern that can detect the *full* link of any active protocol.
-    This version constructs a safer regex by first defining allowed URL characters broadly,
-    and then using that character set within the pattern, enclosed in a non-capturing group.
-    This avoids issues with malformed subpatterns.
+    This version focuses on robustness against common regex syntax errors in URLs
+    by using a broad character match for the URL content, ensuring the pattern itself is well-formed.
+    It primarily aims to fix "unterminated subpattern" errors.
     """
     active_protocols_info = get_active_protocol_info()
     
-    # Define a set of characters that are generally allowed in URLs
-    # This includes alphanumeric, common symbols, and URL-encoded characters.
-    # Excludes: whitespace, single/double quotes, angle brackets.
-    # Note: # is allowed inside URL, but can be a delimiter for tags, which is handled later.
-    # Parentheses () are allowed in some URL contexts but can cause regex issues if not properly handled in complex patterns.
-    # For safety, let's include all common URL characters and Persian characters.
-    # Exclude characters that are definitely NOT part of a link:
-    # \s (whitespace), ' " < >
-    # Using \S (any non-whitespace) and then explicitly excluding.
-    
-    # This character set is for the *content* of the URL part.
-    # It must handle URL-encoded characters like %2F, %3D, etc.
-    # So, allowing % and then any alphanumeric.
-    url_char_set = r"[a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=\u0600-\u06FF]" # General URL characters + Persian script
-    
-    # Build patterns for each protocol: (?:prefix://[allowed_chars_in_url]+)
     full_patterns_list = []
+    
+    # Generic URL matching part: matches any character (except newline by default) zero or more times,
+    # until a whitespace character is encountered, or the end of the string.
+    # This is safer than explicitly listing all URL characters, as it avoids missing any.
+    # It also avoids issues with regex special characters within the URL content itself.
+    url_content_pattern = r'[^\s"\']+' # Matches any non-whitespace, non-quote character. More robust for splitting.
+
     for info in active_protocols_info.values():
         prefix = info.get("prefix")
         if isinstance(prefix, str):
-            # Escape the prefix to treat its literal value, then add the URL character class.
-            # Using a non-capturing group (?:...) for the whole pattern.
-            full_patterns_list.append(r"(?:" + re.escape(prefix) + url_char_set + r"+)")
+            # Escape the literal prefix to ensure it's matched exactly.
+            # Then, append the broad URL content pattern.
+            # The entire unit is a non-capturing group.
+            full_patterns_list.append(r"(?:" + re.escape(prefix) + url_content_pattern + r")")
 
     # Special handling for "ssh" if it needs alternative prefixes like "sftp://".
+    # Ensure this is only added once if not already present via PROTOCOL_INFO_MAP.
     if "ssh" in settings.ACTIVE_PROTOCOLS and "sftp://" not in [info.get("prefix") for info in active_protocols_info.values()]:
-        full_patterns_list.append(r"(?:" + re.escape("sftp://") + url_char_set + r"+)")
-
-    # Join all individual protocol patterns with '|' (OR)
+        full_patterns_list.append(r"(?:" + re.escape("sftp://") + url_content_pattern + r")")
+    
+    # Also add specific patterns for protocols that might not start with "protocol://" but have other well-defined structures.
+    # For instance, a common pattern for "reality" might start with "reality", but not necessarily "reality://".
+    # For now, "reality" handling is left to specific heuristic in ConfigParser.
+    
     combined_full_regex_str = '|'.join(full_patterns_list)
     print(f"protocol_definitions: Generated combined FULL regex string: {combined_full_regex_str}")
 
     if not combined_full_regex_str:
         print("protocol_definitions: WARNING: No active protocols found to build combined FULL regex. Returning empty match regex.")
-        return re.compile(r'a^')
+        return re.compile(r'a^') # This regex will never match anything.
 
-    # Compile the final regex with UNICODE flag for Persian characters and IGNORECASE for prefixes.
-    # re.DOTALL is generally not needed here as we want line-by-line matching, and newline is a \s.
+    # Compile the final regex with UNICODE flag for potentially broad character sets and IGNORECASE for prefixes.
+    # re.DOTALL is not typically needed here as we want to capture within lines, not across them.
+    # The [^\s"\']+ prevents matching beyond the actual link if it's followed by text.
     return re.compile(combined_full_regex_str, re.IGNORECASE | re.UNICODE)
+
