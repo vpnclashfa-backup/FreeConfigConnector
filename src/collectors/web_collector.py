@@ -1,5 +1,3 @@
-# src/collectors/web_collector.py
-
 import httpx
 import re # Not directly used in this version, but can be kept for future
 import os # Not directly used in this version, but can be kept for future
@@ -7,7 +5,7 @@ import json # Not directly used in this version, but can be kept for future
 import asyncio
 import traceback
 from typing import Optional, List, Dict # Ensure all necessary types are imported
-    
+
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
@@ -15,6 +13,7 @@ from src.parsers.config_parser import ConfigParser # Import ConfigParser
 
 class WebCollector:
     def __init__(self):
+        # NEW: ConfigParser now handles all parsing, cleaning, and validation
         self.config_parser = ConfigParser()
         self.client = httpx.AsyncClient(timeout=settings.COLLECTION_TIMEOUT_SECONDS)
         print("WebCollector initialized.")
@@ -70,7 +69,7 @@ class WebCollector:
             if source_manager.add_website(url):
                 stats_reporter.increment_discovered_website_count()
                 print(f"WebCollector: Discovered and added new website URL: {url}")
-        
+
     async def collect_from_website(self, url: str) -> List[Dict]:
         """
         Collects config links from a single website URL, parses content, and updates stats.
@@ -83,8 +82,9 @@ class WebCollector:
             print(f"WebCollector: No content fetched for {url}. Skipping parsing.")
             return []
 
+        # NEW: Delegate parsing, cleaning, and validation to ConfigParser
         parsed_links_info: List[Dict] = self.config_parser.parse_content(content)
-        
+
         if not parsed_links_info and not settings.IGNORE_UNPARSEABLE_CONTENT:
             print(f"WebCollector: Could not parse any links from {url}. Content snippet: {content[:100]}...")
             source_manager.update_website_score(url, -2)
@@ -93,19 +93,20 @@ class WebCollector:
 
 
         for link_info in parsed_links_info:
-            protocol = link_info.get('protocol', 'unknown')
+            protocol = link_info.get('protocol')
             link = link_info.get('link')
-            
-            if not link:
+
+            if not protocol or not link:
                 continue
 
+            # Filter based on active protocols in settings
             if protocol in settings.ACTIVE_PROTOCOLS:
                 collected_links.append(link_info)
                 stats_reporter.increment_total_collected()
                 stats_reporter.increment_protocol_count(protocol)
                 stats_reporter.record_source_link("web", url, protocol)
                 source_manager.update_website_score(url, 1)
-            elif protocol == 'subscription':
+            elif protocol == 'subscription': # Handle 'subscription' protocol specifically (e.g., from Clash/Singbox)
                 print(f"WebCollector: Found subscription URL: {link}. Attempting to add as a new source.")
                 await self._discover_and_add_website(link)
                 source_manager.update_website_score(url, 2)
@@ -130,7 +131,7 @@ class WebCollector:
         tasks = []
         for url in active_websites:
             tasks.append(self.collect_from_website(url))
-        
+
         results: List[Exception | List[Dict]] = await asyncio.gather(*tasks, return_exceptions=True)
 
         for i, result in enumerate(results):
@@ -141,7 +142,7 @@ class WebCollector:
                 source_manager.update_website_score(url, -20)
             elif result:
                 all_collected_links.extend(result)
-        
+
         for website_name in list(source_manager.timeout_websites.keys()):
             if website_name in active_websites and source_manager._all_website_scores.get(website_name, 0) <= settings.MAX_TIMEOUT_SCORE_WEB:
                 stats_reporter.add_newly_timed_out_website(website_name)
@@ -153,4 +154,3 @@ class WebCollector:
         """Closes the HTTP client session."""
         await self.client.aclose()
         print("WebCollector client closed.")
-
