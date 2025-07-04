@@ -37,32 +37,45 @@ class ConfigValidator:
     @staticmethod
     def is_base64(s: str) -> bool:
         """
-        Checks if a string is a valid base64 character set (loose check).
+        Checks if a string is a valid base64 sequence (loose check).
         Aims to quickly discard strings that are definitely not base64.
         """
-        # A quick check for common non-base64 characters or very short strings unlikely to be configs.
-        # Base64 strings should typically be longer than a few characters.
-        # This heuristic tries to prevent trying to decode short emojis or random text.
-        if len(s) < 10 or not re.search(r'^[a-zA-Z0-9+/_-]*=?=?$', s): # Must strictly adhere to base64 charset + padding
-            # print(f"ConfigValidator.is_base64: Rejected (short/invalid base64 charset): '{s[:50]}...'")
+        s_stripped = s.strip()
+        # Heuristic 1: Minimum length for a meaningful base64 string
+        if len(s_stripped) < 10: # Very short strings are unlikely to be configs
+            # print(f"ConfigValidator.is_base64: Rejected (too short): '{s_stripped}'")
             return False
 
-        # Attempt actual decoding to confirm it's decodable base64, but without raising error.
+        # Heuristic 2: Check for typical base64 characters.
+        # Ensure it mostly contains base64 alphabet characters,
+        # but tolerate some non-base64 chars if they are due to context (like newlines, spaces).
+        # We're looking for a *block* that is base64.
+        # This regex checks if the string contains only base64 characters plus optional '=' padding.
+        # It allows for common URL-safe variants ('-', '_') and standard Base64 ('+', '/').
+        if not re.fullmatch(r'^[A-Za-z0-9+/_-]*=?=?$', s_stripped):
+            # print(f"ConfigValidator.is_base64: Rejected (invalid chars found): '{s_stripped[:50]}...'")
+            return False
+
+        # Heuristic 3: Attempt actual decoding to confirm it's decodable base64, but without raising error.
         try:
             # Try both standard and URL-safe decoding
-            base664.b64decode(s, validate=True)
+            base64.b64decode(s_stripped, validate=True)
+            # print(f"ConfigValidator.is_base64: PASSED (standard b64): '{s_stripped[:50]}...'")
             return True
         except Exception:
             try:
-                s_padded = s.replace('-', '+').replace('_', '/')
+                s_padded = s_stripped.replace('-', '+').replace('_', '/')
+                # Ensure correct padding for standard b64decode
                 missing_padding = len(s_padded) % 4
                 if missing_padding != 0:
                     s_padded += '=' * (4 - missing_padding)
                 base64.b64decode(s_padded, validate=True)
+                # print(f"ConfigValidator.is_base64: PASSED (url-safe b64): '{s_stripped[:50]}...'")
                 return True
             except Exception:
-                # print(f"ConfigValidator.is_base64: Rejected (not decodable base64): '{s[:50]}...'")
-                return False
+                # print(f"ConfigValidator.is_base64: Rejected (not decodable b64): '{s_stripped[:50]}...'")
+                pass
+        return False
 
 
     @staticmethod
@@ -106,8 +119,6 @@ class ConfigValidator:
             is_valid = validator_class.is_valid(config_link)
             if not is_valid:
                 print(f"ConfigValidator: VALIDATION FAILED for protocol '{protocol_name}' on link: {config_link[:200]}...")
-            # else:
-                # print(f"ConfigValidator: Validation PASSED for protocol '{protocol_name}' on link: {config_link[:100]}...")
             return is_valid
         
         # Fallback for unknown protocols, or protocols without specific validators
@@ -138,9 +149,13 @@ class ConfigValidator:
         Removes common invisible/control characters, HTML entities, and reduces excessive whitespace
         to prepare text for splitting. This is a preliminary cleaning.
         """
-        text = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u200B-\u200F\u0640\u202A-\u202E\u2066-\u2069\uFEFF\u0000-\u001F\u007F-\u009F]', '', text)
+        # Remove common zero-width spaces, control characters, etc.
+        text = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u200B-\u200F\u200D\u0640\u202A-\u202E\u2066-\u2069\uFEFF\u0000-\u001F\u007F-\u009F]', '', text)
+        # Convert common HTML entities (&amp;, &gt;, &lt;)
         text = text.replace('&amp;', '&').replace('&gt;', '>').replace('&lt;', '<')
+        # Normalize all whitespace characters (space, tab, newline) to a single space and strip leading/trailing
         text = re.sub(r'\s+', ' ', text).strip() 
+        # if not text: print("ConfigValidator: Cleaned preliminary text resulted in empty string.")
         return text
 
     def split_configs_from_text(self, text: str) -> List[str]:
@@ -164,25 +179,15 @@ class ConfigValidator:
             # This pattern is specifically designed to cut off common junk observed in your samples
             # like emojis, numbers, and specific Farsi/English text at the end of the line.
             trailing_junk_pattern = re.compile(
-                r'(\s+[\d\U0001F000-\U0001FFFF\u2705-\u27BF\ufe00-\ufe0f]+.*|' + # Numbers/Emojis/Checkmarks/Stars and anything after
-                r'\s+Channel\s+https?:\/\/t\.me\/[a-zA-Z0-9_]+.*|' + # "Channel https://t.me/..."
-                r'\s+برای سرور های جدید.*|' + # Farsi common phrase
-                r'\s+اپراتورها.*|' + # Farsi common phrase
-                r'\s+Tel\. Channel.*|' + # English common phrase
-                r'\s+\[\s*\]t\.me\/[a-zA-Z0-9_]+\s*ϟ.*|' + # Complex metadata like [ ]t.me/... ϟ
-                r'\s+#کانفیگ\s*#proxy\s*#vray.*|' + # Hashtag block
-                r'\s+Test\s+on.*|' + # "Test on..."
-                r'\s+برای دوستان خود ارسال کنید.*|' + # Farsi call to action
-                r'\s+وصله\s*\?|' + # Farsi question
-                r'\s+ایرانسل، مخابرات و رایتل.*|' + # Farsi ISPs
-                r'\s+لطفاً دانلود نداشته باشید.*|' + # Farsi instruction
-                r'|\s+#\w+\s*#.*|' + # General #title #tag format (like from sample)
-                r'|\s+ᴄᴏᴜɴᴛʀʏ:.*|' + # Added for country text in your samples
-                r'|\s+CREATOR:.*|' + # Added for creator text in your samples
-                r'|\s+@\w+' + # Trailing @channel mention
-                r'|\s*[\u2600-\u26FF\u2700-\u27BF\U0001F000-\U0001FFFF]+\s*.*|' + # Catch any lingering emojis at the end
+                r'(\s*[\d\U0001F000-\U0001FFFF\u2705-\u27BF\ufe00-\ufe0f\u2600-\u26FF\u2700-\u27BF]+\s*.*|' + # Numbers/Emojis/Checkmarks/Stars and anything after
+                r'\s*(?:Channel|برای سرور های جدید|اپراتورها|Tel\. Channel|Test on|برای دوستان خود ارسال کنید|وصله\?|ایرانسل، مخابرات و رایتل|لطفاً دانلود نداشته باشید|مسئله این است که جغرافیا زورش زیاد است|کم باش!اصلا هم نگران کم شدنت نباش!|پربرکت باشید)\s*.*|' + # Farsi/English common phrases
+                r'\s*\[\s*\]t\.me\/[a-zA-Z0-9_]+\s*ϟ.*|' + # Complex metadata like [ ]t.me/... ϟ
+                r'\s*#\w+\s*#.*|' + # Hashtag block like #سرور #فیلترشکن
+                r'\s*@\w+\s*.*|' + # Trailing @channel mention (e.g. from your example: @speeds_vpn)
+                r'|\s*(?:ᴄᴏᴜɴᴛʀʏ:|CREATOR:).*|' + # Country/Creator metadata
+                r'|\s*\|\s*.*|' + # Pipe separators and anything after
                 r'|\s*\S+\s*$' # Loosely match trailing single words or non-whitespace characters at end of line (like "✅" or "👌")
-                , re.IGNORECASE | re.DOTALL
+                , re.IGNORECASE | re.DOTALL | re.UNICODE # Re-added re.UNICODE for better emoji handling
             )
             
             final_config_str = raw_link_candidate.strip() # Initial strip
