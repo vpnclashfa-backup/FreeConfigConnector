@@ -1,5 +1,6 @@
+import base64
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class WireguardValidator(BaseValidator):
     @staticmethod
@@ -7,30 +8,25 @@ class WireguardValidator(BaseValidator):
         if not link.startswith("wireguard://"):
             return False
         try:
-            # Wireguard links are often in a format that's not a standard URL,
-            # but rather wg://BASE64_CONFIG_OR_KEY?param=value#tag
-            # A full WireGuard config validation would be complex (checking keys, addresses etc.)
-            # For simplicity, we just check for base64 part and essential query params.
-
             parsed_url = urlparse(link)
             
-            # The 'netloc' part might contain the key or be empty.
-            # The actual config details are usually in query parameters or the base64 encoded part.
-            
-            # A WireGuard link MUST contain a 'publickey' parameter, and usually 'endpoint'.
             query_params = parse_qs(parsed_url.query)
 
-            if not 'publickey' in query_params:
+            # WireGuard links MUST contain a 'publickey' parameter
+            if 'publickey' not in query_params or not query_params['publickey'][0]:
                 return False
             
             # Endpoint is usually host:port
-            if 'endpoint' in query_params:
+            if 'endpoint' in query_params and query_params['endpoint'][0]:
                 endpoint = query_params['endpoint'][0]
                 if ':' not in endpoint: return False
                 host, port_str = endpoint.rsplit(':', 1)
                 if not BaseValidator._is_valid_port(int(port_str)): return False
                 if not (BaseValidator._is_valid_domain(host) or BaseValidator._is_valid_ipv4(host) or BaseValidator._is_valid_ipv6(host)):
                     return False
+            
+            # The 'netloc' part might contain a key as well, but 'publickey' in query is more standard for links.
+            # No strict validation for 'privatekey' if it's there (often not in shareable links).
             
             return True
         except Exception:
@@ -43,6 +39,6 @@ class WireguardValidator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
