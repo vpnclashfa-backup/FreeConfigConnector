@@ -1,5 +1,5 @@
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class HysteriaValidator(BaseValidator):
     @staticmethod
@@ -20,13 +20,16 @@ class HysteriaValidator(BaseValidator):
             
             query_params = parse_qs(parsed_url.query)
             
-            # Hysteria typically requires 'autocert' or 'insecure' or 'ca' or 'peer' for TLS
+            # Hysteria typically requires TLS parameters (peer, ca, autocert, insecure)
             if not ( 'peer' in query_params or 'ca' in query_params or 'autocert' in query_params or 
                      ('insecure' in query_params and query_params['insecure'][0].lower() == '1') ):
-                # This check can be made more strict based on common Hysteria configs
-                pass # Make it permissive for now, just look for TLS related params
+                # This check can be made stricter based on common Hysteria configs.
+                # For now, it's a basic check that *some* TLS related param exists.
+                pass # Making it permissive as in example, for broader acceptance.
             
-            # 'obfs' is also common, but not strictly required
+            # Common parameters like 'up' (upload bandwidth), 'down' (download bandwidth), 'obfs'
+            # No strict validation for values unless specified.
+            
             return True
         except Exception:
             return False
@@ -38,6 +41,6 @@ class HysteriaValidator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
