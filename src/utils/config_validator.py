@@ -37,7 +37,7 @@ class ConfigValidator:
     @staticmethod
     def is_base64(s: str) -> bool:
         """
-        Checks if a string is a valid base64 sequence (loose check).
+        Checks if a string is a valid base64 character set (loose check).
         Aims to quickly discard strings that are definitely not base64.
         """
         s_stripped = s.strip()
@@ -47,13 +47,9 @@ class ConfigValidator:
             return False
 
         # Heuristic 2: Check for typical base64 characters.
-        # Ensure it mostly contains base64 alphabet characters,
-        # but tolerate some non-base64 chars if they are due to context (like newlines, spaces).
-        # We're looking for a *block* that is base64.
-        # This regex checks if the string contains only base64 characters plus optional '=' padding.
-        # It allows for common URL-safe variants ('-', '_') and standard Base64 ('+', '/').
-        if not re.fullmatch(r'^[A-Za-z0-9+/_-]*=?=?$', s_stripped):
-            # print(f"ConfigValidator.is_base64: Rejected (invalid chars found): '{s_stripped[:50]}...'")
+        # Ensure it strictly adheres to base64 alphabet characters plus optional '=' padding.
+        if not re.fullmatch(r'^[A-Za-z0-9+/_-]*={0,2}$', s_stripped): # {0,2} for up to two padding characters
+            # print(f"ConfigValidator.is_base64: Rejected (invalid chars found or malformed padding): '{s_stripped[:50]}...'")
             return False
 
         # Heuristic 3: Attempt actual decoding to confirm it's decodable base64, but without raising error.
@@ -70,7 +66,7 @@ class ConfigValidator:
                 if missing_padding != 0:
                     s_padded += '=' * (4 - missing_padding)
                 base64.b64decode(s_padded, validate=True)
-                # print(f"ConfigValidator.is_base64: PASSED (url-safe b64): '{s_stripped[:50]}...'")
+                # print(f"ConfigValidator.is_base64: PASSED (url-safe b64): '{s_padded[:50]}...'")
                 return True
             except Exception:
                 # print(f"ConfigValidator.is_base64: Rejected (not decodable b64): '{s_stripped[:50]}...'")
@@ -155,7 +151,6 @@ class ConfigValidator:
         text = text.replace('&amp;', '&').replace('&gt;', '>').replace('&lt;', '<')
         # Normalize all whitespace characters (space, tab, newline) to a single space and strip leading/trailing
         text = re.sub(r'\s+', ' ', text).strip() 
-        # if not text: print("ConfigValidator: Cleaned preliminary text resulted in empty string.")
         return text
 
     def split_configs_from_text(self, text: str) -> List[str]:
@@ -178,14 +173,15 @@ class ConfigValidator:
             # Apply trailing junk pattern to each found link. This is a crucial secondary cleaning.
             # This pattern is specifically designed to cut off common junk observed in your samples
             # like emojis, numbers, and specific Farsi/English text at the end of the line.
+            # The pattern is ordered from most specific to more general.
             trailing_junk_pattern = re.compile(
                 r'(\s*[\d\U0001F000-\U0001FFFF\u2705-\u27BF\ufe00-\ufe0f\u2600-\u26FF\u2700-\u27BF]+\s*.*|' + # Numbers/Emojis/Checkmarks/Stars and anything after
                 r'\s*(?:Channel|برای سرور های جدید|اپراتورها|Tel\. Channel|Test on|برای دوستان خود ارسال کنید|وصله\?|ایرانسل، مخابرات و رایتل|لطفاً دانلود نداشته باشید|مسئله این است که جغرافیا زورش زیاد است|کم باش!اصلا هم نگران کم شدنت نباش!|پربرکت باشید)\s*.*|' + # Farsi/English common phrases
                 r'\s*\[\s*\]t\.me\/[a-zA-Z0-9_]+\s*ϟ.*|' + # Complex metadata like [ ]t.me/... ϟ
                 r'\s*#\w+\s*#.*|' + # Hashtag block like #سرور #فیلترشکن
-                r'\s*@\w+\s*.*|' + # Trailing @channel mention (e.g. from your example: @speeds_vpn)
+                r'\s*@\w+\s*.*|' + # Trailing @channel mention
                 r'|\s*(?:ᴄᴏᴜɴᴛʀʏ:|CREATOR:).*|' + # Country/Creator metadata
-                r'|\s*\|\s*.*|' + # Pipe separators and anything after
+                r'|\s*\|\s*.*|' + # Pipe separators and anything after (e.g. from your example: "|")
                 r'|\s*\S+\s*$' # Loosely match trailing single words or non-whitespace characters at end of line (like "✅" or "👌")
                 , re.IGNORECASE | re.DOTALL | re.UNICODE # Re-added re.UNICODE for better emoji handling
             )
@@ -196,10 +192,10 @@ class ConfigValidator:
             if junk_match:
                 original_len = len(final_config_str)
                 final_config_str = final_config_str[:junk_match.start()].strip()
-                # if final_config_str != raw_link_candidate.strip():
+                # if final_config_str != raw_link_candidate.strip(): # Only log if something was actually stripped
                     # print(f"ConfigValidator: Stripped trailing junk from: '{raw_link_candidate[:50]}...' -> Cleaned: '{final_config_str[:50]}...' (original len: {original_len}, final len: {len(final_config_str)})")
             
-            if final_config_str:
+            if final_config_str: # Add if not empty after cleaning
                 extracted_raw_configs.append(final_config_str)
             else:
                 print(f"ConfigValidator: Candidate '{raw_link_candidate[:50]}...' became EMPTY after cleaning. Not added to extracted configs.")
