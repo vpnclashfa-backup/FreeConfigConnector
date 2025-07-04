@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional
+import re # Added for regex in helper methods
+import ipaddress # Added for IP validation
+import uuid # Added for UUID validation
 
 class BaseValidator(ABC):
     """
@@ -37,14 +40,12 @@ class BaseValidator(ABC):
         """
         pass # این متد باید توسط کلاس‌های فرزند پیاده‌سازی شود
 
-    # می‌توانید متدهای کمکی مشترک را در اینجا اضافه کنید، 
-    # اما مطمئن شوید که متدهای abstract@ را حفظ می‌کنید.
+    # متدهای کمکی مشترک که توسط Validatorهای خاص پروتکل استفاده می‌شوند:
 
     @staticmethod
     def _is_valid_ipv4(ip: str) -> bool:
         """بررسی می‌کند که آیا یک رشته آدرس IPv4 معتبر است."""
         try:
-            import ipaddress
             return isinstance(ipaddress.ip_address(ip), ipaddress.IPv4Address)
         except ValueError:
             return False
@@ -53,8 +54,18 @@ class BaseValidator(ABC):
     def _is_valid_ipv6(ip: str) -> bool:
         """بررسی می‌کند که آیا یک رشته آدرس IPv6 معتبر است."""
         try:
-            import ipaddress
             return isinstance(ipaddress.ip_address(ip), ipaddress.IPv6Address)
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _is_valid_ip_address(ip: str) -> bool:
+        """بررسی می‌کند که آیا یک رشته آدرس IP (IPv4 یا IPv6) معتبر است. همچنین IPV6 محصور در [] را مدیریت می‌کند."""
+        if ip.startswith("[") and ip.endswith("]"):
+            ip = ip[1:-1]
+        try:
+            ipaddress.ip_address(ip)
+            return True
         except ValueError:
             return False
 
@@ -65,20 +76,23 @@ class BaseValidator(ABC):
             return False
         if hostname.endswith("."):
             hostname = hostname[:-1] # Remove trailing dot if present
-        # رگولار اکسپرشن برای بررسی بخش‌های دامنه
-        import re
+        # Regular expression for valid domain parts
+        # Each part must be 1-63 chars, start/end with alphanumeric, contain only alphanumeric/hyphens
         return all(re.match(r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)$", x) for x in hostname.split("."))
 
     @staticmethod
-    def _is_valid_port(port: int) -> bool:
+    def _is_valid_port(port: Union[int, str]) -> bool: # Allow int or str for port
         """بررسی می‌کند که آیا یک پورت عددی معتبر است."""
-        return isinstance(port, int) and 1 <= port <= 65535
+        try:
+            port_int = int(port)
+            return 1 <= port_int <= 65535
+        except (ValueError, TypeError):
+            return False
 
     @staticmethod
     def _is_valid_uuid(value: str) -> bool:
         """بررسی می‌کند که آیا یک رشته UUID معتبر است."""
         try:
-            import uuid
             uuid.UUID(str(value))
             return True
         except ValueError:
