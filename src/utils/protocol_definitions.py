@@ -1,6 +1,6 @@
 import re
-from typing import Dict, List, Type, Union # ADDED Union import
-# NEW: Import the abstract base class for validators and specific validators
+from typing import Dict, List, Type, Union # Ensure Union is imported
+# NEW: Import all specific validators
 from src.utils.protocol_validators.base_validator import BaseValidator
 from src.utils.protocol_validators.vmess_validator import VmessValidator
 from src.utils.protocol_validators.vless_validator import VlessValidator
@@ -25,7 +25,6 @@ from src.utils.settings_manager import settings
 
 # Define base protocol information including their prefixes and their validator classes.
 # This is the central registry for protocols.
-# CHANGED: Use Union[str, Type[BaseValidator]] instead of str | Type[BaseValidator]
 PROTOCOL_INFO_MAP: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {
     "http": {"prefix": "http://", "validator": HttpValidator}, # Now uses specific validator
     "socks5": {"prefix": "socks5://", "validator": Socks5Validator}, # Now uses specific validator
@@ -59,17 +58,20 @@ ORDERED_PROTOCOLS_FOR_MATCHING: List[str] = [
 ]
 
 
-def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValidator]]]]: # CHANGED: Use Union
+def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValidator]]]]:
     """
     Returns a map of active protocols to their full information (prefix, validator class).
     Filters based on settings.ACTIVE_PROTOCOLS.
     """
-    active_info: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {} # CHANGED: Use Union
+    active_info: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {}
     for protocol_name in settings.ACTIVE_PROTOCOLS:
         if protocol_name in PROTOCOL_INFO_MAP:
             active_info[protocol_name] = PROTOCOL_INFO_MAP[protocol_name]
         else:
-            print(f"Warning: Protocol '{protocol_name}' in settings.ACTIVE_PROTOCOLS is not defined in PROTOCOL_INFO_MAP. Using generic handler.")
+            # CHANGED: Log this warning only if it's not a known protocol in PROTOCOL_INFO_MAP
+            # AND if it's not 'reality' (as reality is handled specially)
+            if protocol_name != 'reality':
+                print(f"protocol_definitions: WARNING: Protocol '{protocol_name}' in settings.ACTIVE_PROTOCOLS is not defined in PROTOCOL_INFO_MAP. Using generic handler.")
             active_info[protocol_name] = {"prefix": f"{protocol_name}://", "validator": BaseValidator}
     return active_info
 
@@ -82,16 +84,24 @@ def get_combined_protocol_prefix_regex() -> re.Pattern:
     
     # Create a regex that matches the *start* of any active protocol (e.g., 'vless://', 'ss://')
     # Escape the prefix to handle special regex characters like . or :
-    protocol_prefixes = [re.escape(info["prefix"]) for info in active_protocols_info.values() if isinstance(info["prefix"], str)]
+    protocol_prefixes_list = []
+    for info in active_protocols_info.values():
+        prefix = info.get("prefix")
+        if isinstance(prefix, str):
+            protocol_prefixes_list.append(re.escape(prefix))
 
     # Special handling for "ssh" if it needs alternative prefixes like "sftp://"
-    if "ssh" in active_protocols_info: 
-        protocol_prefixes.append(re.escape("sftp://")) # Add sftp prefix if ssh is active
+    # We already have SSH validator covering "ssh://" and "sftp://" so this part is more about discovery regex
+    # Ensure sftp:// is part of the combined regex if SSH is active
+    if "ssh" in settings.ACTIVE_PROTOCOLS and "sftp://" not in [info.get("prefix") for info in active_protocols_info.values()]:
+        protocol_prefixes_list.append(re.escape("sftp://")) # Add sftp prefix if ssh is active and sftp not explicitly in map
 
 
-    combined_prefix_regex_str = '|'.join(protocol_prefixes)
+    combined_prefix_regex_str = '|'.join(protocol_prefixes_list)
+    print(f"protocol_definitions: Generated combined regex string: {combined_prefix_regex_str}") # NEW: Log the generated regex string
 
     if not combined_prefix_regex_str:
+        print("protocol_definitions: WARNING: No active protocols found to build combined regex. Returning empty match regex.") # Log warning
         return re.compile(r'a^') # Matches nothing if no protocols are active
 
     # Use re.IGNORECASE for case-insensitive prefix matching (e.g., Vmess:// or vmess://)
