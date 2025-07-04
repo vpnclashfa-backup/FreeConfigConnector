@@ -1,5 +1,5 @@
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class TuicValidator(BaseValidator):
     @staticmethod
@@ -9,29 +9,37 @@ class TuicValidator(BaseValidator):
         try:
             parsed_url = urlparse(link)
             
-            user_pass_part = parsed_url.username # TUIC uses username as UUID or ID
-            if not user_pass_part: return False # Need ID
+            # TUIC can have user:pass@host:port or host:port with UUID/password in query
+            user_pass_host_port_part = parsed_url.netloc
+            
+            host_port_only = user_pass_host_port_part
+            if '@' in user_pass_host_port_part:
+                user_pass_str, host_port_only = user_pass_host_port_part.split('@', 1)
+                # If user:pass@, check user and pass format (can be UUID:password)
+                if ':' not in user_pass_str:
+                    return False # Expect ID:Password
+                user_id, password = user_pass_str.split(':', 1)
+                if not BaseValidator._is_valid_uuid(user_id): # TUIC often uses UUID as ID
+                    pass # Being permissive, some might not use UUID
+            
+            if ':' not in host_port_only: return False
 
-            host_port_part = parsed_url.netloc.split('@')[-1]
-            if ':' not in host_port_part: return False
-
-            host, port_str = host_port_part.rsplit(':', 1)
+            host, port_str = host_port_only.rsplit(':', 1)
             port = int(port_str)
 
             if not BaseValidator._is_valid_port(port): return False
             if not (BaseValidator._is_valid_domain(host) or BaseValidator._is_valid_ipv4(host) or BaseValidator._is_valid_ipv6(host)):
                 return False
             
-            # TUIC requires specific query parameters like 'uuid', 'password'
+            # TUIC requires specific query parameters like 'uuid', 'password' (for TUICv5 if not in userinfo)
             query_params = parse_qs(parsed_url.query)
             
-            if not ('uuid' in query_params and 'password' in query_params):
-                # TUICv5 uses password in query params. TUICv4 uses username:password in userinfo
-                # This validator assumes TUICv5 format with explicit uuid/password in query
-                # If TUICv4 (user:pass@host:port) is needed, this logic needs adjustment.
-                return False 
+            # If UUID/Password not in userinfo, they should be in query
+            if '@' not in user_pass_host_port_part: # This is a TUICv5-like link (no user/pass in netloc)
+                if not ('uuid' in query_params and 'password' in query_params):
+                    return False 
             
-            # Minimal check for 'insecure' or 'allow_insecure'
+            # Minimal check for 'insecure' or 'allow_insecure' (common for TUIC)
             # if 'allow_insecure' in query_params and query_params['allow_insecure'][0].lower() == '1':
             #     pass
             
@@ -46,6 +54,6 @@ class TuicValidator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
