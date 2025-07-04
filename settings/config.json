@@ -89,7 +89,7 @@
     "mixed_links_file": "mixed_links.txt",
     "protocol_specific_sub_dir": "protocols",
     "report_file": "report.md",
-    "error_warning_log_file": "error_warnings.log"  // این خط اضافه/اصلاح شده است.
+    "error_warning_log_file": "error_warnings.log"
   },
 
   "output_settings": {
