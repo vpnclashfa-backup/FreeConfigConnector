@@ -1,5 +1,5 @@
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class AnytlsValidator(BaseValidator):
     @staticmethod
@@ -19,7 +19,8 @@ class AnytlsValidator(BaseValidator):
             
             # Anytls is a generic TLS tunnel, might have parameters for SNI, ALPN etc.
             # For simplicity, we just check for basic URL structure for now.
-            # if not 'sni' in parse_qs(parsed_url.query): return False # Example stricter check
+            # Stricter checks like:
+            # if not 'sni' in parse_qs(parsed_url.query) or not parse_qs(parsed_url.query)['sni'][0]: return False
             
             return True
         except Exception:
@@ -32,6 +33,6 @@ class AnytlsValidator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
