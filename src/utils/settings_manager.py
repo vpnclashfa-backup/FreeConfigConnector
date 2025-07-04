@@ -5,9 +5,11 @@ from typing import Optional, Dict, List
 
 class Settings:
     def __init__(self, config_file: str = 'settings/config.json'):
+        # Calculate project_root once in __init__ and store it
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
-        self.full_config_path = os.path.join(project_root, config_file)
+        self.PROJECT_ROOT = os.path.abspath(os.path.join(current_dir, '..', '..')) 
+        
+        self.full_config_path = os.path.join(self.PROJECT_ROOT, config_file) # Use self.PROJECT_ROOT here
 
         self.config_data = self._load_config()
         self._set_attributes()
@@ -70,8 +72,7 @@ class Settings:
         self.MAX_PROXIES_PER_PROTOCOL: Dict[str, int] = self.config_data.get('proxy_limits', {}).get('max_proxies_per_protocol', {})
 
         # File Paths
-        self.PROJECT_ROOT = os.path.abspath(os.path.join(current_dir, '..', '..'))
-
+        # Use self.PROJECT_ROOT which is already defined in __init__
         self.SOURCES_DIR_NAME: str = self.config_data.get('file_paths', {}).get('sources_dir', 'sources')
         self.OUTPUT_DIR_NAME: str = self.config_data.get('file_paths', {}).get('output_dir', 'output')
         
@@ -114,10 +115,9 @@ class Settings:
         self.IGNORE_GITHUB_GIST_URLS: bool = self.config_data.get('filters', {}).get('ignore_github_gist_urls', False)
         self.IGNORE_GITHUB_RAW_URLS: bool = self.config_data.get('filters', {}).get('ignore_github_raw_urls', False)
         
-        # Ensure regex patterns are raw strings (r'...') and properly escaped if they contain special regex characters
-        # The default list in config.json should already be properly escaped for JSON.
-        # Here, we ensure the Python string representation is also treated as raw.
-        self.TELEGRAM_CHANNEL_IGNORE_PATTERNS: List[str] = [
+        # Ensure regex patterns are compiled from the list loaded from config.json
+        # The default list in config.json is also set to just 'bot$'
+        self.TELEGRAM_CHANNEL_IGNORE_PATTERNS: List[re.Pattern] = [
             re.compile(pattern) for pattern in self.config_data.get('filters', {}).get('telegram_channel_ignore_patterns', [r'bot$'])
         ]
 
