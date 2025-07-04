@@ -1,14 +1,11 @@
 import base64
 import json
 import re
-import yaml # pip install PyYAML
-from typing import List, Dict, Optional, Tuple, Union # Ensure Union is imported
+import yaml
+from typing import List, Dict, Optional, Tuple, Union
 
-# وارد کردن تعاریف پروتکل مرکزی و ConfigValidator
-from src.utils.protocol_definitions import get_active_protocol_info, get_combined_protocol_prefix_regex, ORDERED_PROTOCOLS_FOR_MATCHING
+from src.utils.protocol_definitions import get_active_protocol_info, get_combined_protocol_full_regex, ORDERED_PROTOCOLS_FOR_MATCHING
 from src.utils.config_validator import ConfigValidator
-
-# استفاده مستقیم از تنظیمات از utils
 from src.utils.settings_manager import settings
 
 
@@ -16,7 +13,7 @@ class ConfigParser:
     def __init__(self):
         self.config_validator = ConfigValidator()
         self.active_protocol_info = get_active_protocol_info()
-        self.combined_protocol_prefix_regex = get_combined_protocol_prefix_regex()
+        self.combined_protocol_full_regex = get_combined_protocol_full_regex() # CHANGED: use full regex
         self.ordered_protocols_for_matching = ORDERED_PROTOCOLS_FOR_MATCHING
 
         print("ConfigParser: Initialized with new modular validation system.")
@@ -36,35 +33,36 @@ class ConfigParser:
 
 
         for candidate in config_candidates:
-            # Try to match Reality first if it's a VLESS candidate
+            # Try to match Reality first if it's a VLESS candidate and active
             is_reality_candidate = False
-            if candidate.startswith("vless://"):
+            if "reality" in settings.ACTIVE_PROTOCOLS and candidate.startswith("vless://"): # Check if reality is active
                 vless_validator_class = self.config_validator.protocol_validators.get("vless")
                 if vless_validator_class and hasattr(vless_validator_class, 'is_reality_link') and vless_validator_class.is_reality_link(candidate):
                     is_reality_candidate = True
                     print(f"ConfigParser: Candidate '{candidate[:100]}...' identified as a potential Reality link (VLESS variant).")
                     
-                    # Clean and validate Reality (as 'reality' protocol)
-                    cleaned_candidate = self.config_validator.clean_protocol_config(candidate, 'reality') # Clean as reality
-                    if self.config_validator.validate_protocol_config(cleaned_candidate, 'reality'): # Validate as reality
+                    cleaned_candidate = self.config_validator.clean_protocol_config(candidate, 'reality')
+                    if self.config_validator.validate_protocol_config(cleaned_candidate, 'reality'):
                         found_links.append({'protocol': 'reality', 'link': cleaned_candidate})
                         print(f"ConfigParser: VALID Reality link found: {cleaned_candidate[:100]}...")
                         continue # Move to next candidate, as Reality is a VLESS variant, we don't need to re-check as VLESS
 
             # If not a Reality candidate, or Reality validation failed, proceed with ordered protocol matching
-            # Note: We iterate through all ordered_protocols_for_matching to cover all cases without premature break.
+            # Iterate through ORDERED_PROTOCOLS_FOR_MATCHING for priority
             matched_protocol_for_candidate = False
-            for protocol_name in self.ordered_protocols_for_matching:
+            for protocol_name in ORDERED_PROTOCOLS_FOR_MATCHING:
                 if protocol_name == "reality": # Skip "reality" itself as it's a VLESS variant handled above
+                    continue
+                
+                # Only try if protocol is active in settings
+                if protocol_name not in settings.ACTIVE_PROTOCOLS:
                     continue
 
                 protocol_info = self.active_protocol_info.get(protocol_name)
                 
                 if protocol_info and isinstance(protocol_info["prefix"], str):
                     if candidate.startswith(protocol_info["prefix"]):
-                        # NEW: Use the centralized cleaning and validation from ConfigValidator
                         cleaned_candidate = self.config_validator.clean_protocol_config(candidate, protocol_name)
-                        
                         is_valid = self.config_validator.validate_protocol_config(cleaned_candidate, protocol_name)
                         
                         if is_valid:
@@ -74,8 +72,6 @@ class ConfigParser:
                             break # Found a valid match, move to next candidate
                         else:
                             print(f"ConfigParser: Candidate '{cleaned_candidate[:100]}...' for protocol '{protocol_name}' failed specific validation.")
-                # else:
-                    # print(f"ConfigParser: Protocol info not found or prefix invalid for '{protocol_name}'.")
 
             if not is_reality_candidate and not matched_protocol_for_candidate and candidate:
                 print(f"ConfigParser: Candidate '{candidate[:100]}...' did NOT match any active protocol or failed validation after all checks.")
@@ -92,14 +88,14 @@ class ConfigParser:
         print(f"ConfigParser: Attempting to decode Base64 content (length: {len(content)}).")
         decoded_str = self.config_validator.decode_base64_text(content)
         if decoded_str:
-            # بررسی کن آیا محتوای رمزگشایی شده شبیه لیستی از لینک‌ها یا فرمت قابل پارس دیگری است
-            if len(decoded_str) > 10 and (self.combined_protocol_prefix_regex.search(decoded_str) or 
-                                          self.config_validator.is_valid_protocol_prefix(decoded_str)):
+            # CHANGED: Use full regex for more robust check on decoded content
+            # And also check length after stripping whitespace, to avoid decoding small irrelevant strings
+            if len(decoded_str.strip()) > 10 and self.combined_protocol_full_regex.search(decoded_str):
                 print("ConfigParser: Base64 content successfully decoded and contains potential links. Proceeding with parsing decoded content.")
                 return decoded_str
             print("ConfigParser: Base64 decoded, but content does not seem to contain valid configs or protocol links.")
             return None
-        print("ConfigParser: Failed to decode content as Base64.")
+        print("ConfigParser: Failed to decode content as Base64 (might not be Base64).")
         return None
 
     def _parse_clash_config(self, content: str) -> List[Dict]:
@@ -110,6 +106,15 @@ class ConfigParser:
             print("ConfigParser: Clash parser is disabled in settings.")
             return []
 
+        # Optimization: Only attempt to parse as YAML/JSON if it looks like a config.
+        # This prevents trying to parse random text as YAML/JSON.
+        # A simple heuristic: check if it starts with 'proxies:', 'port:', '{', '[', etc.
+        # Or if it's already identified as a base64 string.
+        # For simplicity, if it's short or contains common non-config text, skip.
+        if len(content) < 50 or not (content.strip().startswith('proxies:') or content.strip().startswith('proxy-providers:') or content.strip().startswith('{') or content.strip().startswith('[')):
+            print(f"ConfigParser: Content does not look like a Clash config (heuristic check). Skipping Clash parser. Content starts with: '{content[:50]}...'")
+            return []
+
         extracted_links: List[Dict] = []
         print(f"ConfigParser: Attempting to parse Clash config (content length: {len(content)}).")
         try:
@@ -118,12 +123,11 @@ class ConfigParser:
                 print(f"ConfigParser: Clash content is not a valid YAML dictionary. Skipping. Content starts with: '{content[:50]}...'")
                 return []
 
-            # استخراج از لیست 'proxies'
             proxies = clash_data.get('proxies', [])
             print(f"ConfigParser: Found {len(proxies)} proxies in Clash config.")
             for proxy_obj in proxies:
                 if isinstance(proxy_obj, dict):
-                    # Attempt to reconstruct SS/SSR links from dictionary properties
+                    # Reconstruct SS/SSR links
                     if proxy_obj.get('type', '').lower() == 'ss' and all(k in proxy_obj for k in ['cipher', 'password', 'server', 'port']):
                         try:
                             method_pass = f"{proxy_obj['cipher']}:{proxy_obj['password']}"
@@ -131,7 +135,7 @@ class ConfigParser:
                             ss_link = f"ss://{encoded_method_pass}@{proxy_obj['server']}:{proxy_obj['port']}"
                             if 'name' in proxy_obj:
                                 from urllib.parse import quote
-                                ss_link += f"#{quote(str(proxy_obj['name']))}" # Ensure name is string and URL-encoded
+                                ss_link += f"#{quote(str(proxy_obj['name']))}"
 
                             cleaned_ss_link = self.config_validator.clean_protocol_config(ss_link, 'ss')
                             if self.config_validator.validate_protocol_config(cleaned_ss_link, 'ss'):
@@ -144,10 +148,7 @@ class ConfigParser:
                     
                     elif proxy_obj.get('type', '').lower() == 'ssr' and all(k in proxy_obj for k in ['server', 'port', 'protocol', 'method', 'obfs', 'password']):
                         try:
-                            # Reconstruct SSR link (simplified example, real SSR links are complex)
-                            # This needs to match the structure expected by SsrValidator
                             ssr_part = f"{proxy_obj['server']}:{proxy_obj['port']}:{proxy_obj['protocol']}:{proxy_obj['method']}:{proxy_obj['obfs']}:{proxy_obj['password']}"
-                            # Handle optional params like obfsparam, protparam
                             optional_params = []
                             if 'obfsparam' in proxy_obj: optional_params.append(f"obfsparam={base64.urlsafe_b64encode(str(proxy_obj['obfsparam']).encode()).decode().rstrip('=')}")
                             if 'protparam' in proxy_obj: optional_params.append(f"protparam={base64.urlsafe_b64encode(str(proxy_obj['protparam']).encode()).decode().rstrip('=')}")
@@ -169,8 +170,6 @@ class ConfigParser:
                         except Exception as e:
                             print(f"ConfigParser: ERROR reconstructing/validating SSR link from Clash: {e}. Proxy obj: {proxy_obj}")
 
-                    # For other types (vmess, vless, trojan), they often have direct links embedded in string form.
-                    # We search in their JSON string representation.
                     proxy_str_representation = json.dumps(proxy_obj)
                     direct_links_from_proxy = self._extract_direct_links(proxy_str_representation)
                     extracted_links.extend(direct_links_from_proxy)
@@ -178,7 +177,6 @@ class ConfigParser:
                         print(f"ConfigParser: Extracted {len(direct_links_from_proxy)} direct links from Clash proxy object's string representation.")
 
 
-            # استخراج از 'proxy-providers' (URLهایی که به اشتراک‌ها اشاره می‌کنند)
             proxy_providers = clash_data.get('proxy-providers', {})
             print(f"ConfigParser: Found {len(proxy_providers)} proxy providers in Clash config.")
             for provider_name, provider_obj in proxy_providers.items():
@@ -203,6 +201,12 @@ class ConfigParser:
             print("ConfigParser: SingBox parser is disabled in settings.")
             return []
 
+        # Optimization: Only attempt to parse as JSON if it looks like a config.
+        # Simple heuristic: must start with '{' or '['
+        if not (content.strip().startswith('{') or content.strip().startswith('[')):
+            print(f"ConfigParser: Content does not look like a SingBox config (heuristic check). Skipping SingBox parser. Content starts with: '{content[:50]}...'")
+            return []
+
         extracted_links: List[Dict] = []
         print(f"ConfigParser: Attempting to parse SingBox config (content length: {len(content)}).")
         try:
@@ -215,14 +219,12 @@ class ConfigParser:
             print(f"ConfigParser: Found {len(outbounds)} outbounds in SingBox config.")
             for outbound_obj in outbounds:
                 if isinstance(outbound_obj, dict):
-                    # Check for 'type' and 'tag' to ensure it's a proxy outbound
-                    if 'type' in outbound_obj and outbound_obj['type'] not in ['direct', 'block', 'selector', 'urltest', 'fallback', 'loadbalance', 'dns', 'http', 'socks'] : # Exclude common non-proxy outbound types
+                    if 'type' in outbound_obj and outbound_obj['type'] not in ['direct', 'block', 'selector', 'urltest', 'fallback', 'loadbalance', 'dns', 'http', 'socks']:
                         outbound_str = json.dumps(outbound_obj)
                         direct_links_from_outbound = self._extract_direct_links(outbound_str)
                         extracted_links.extend(direct_links_from_outbound)
                         if direct_links_from_outbound:
                             print(f"ConfigParser: Extracted {len(direct_links_from_outbound)} direct links from SingBox outbound object.")
-                    # Also check for subscription links within 'outbound' if SingBox supports it
                     elif outbound_obj.get('type') == 'urltest' and 'url' in outbound_obj and isinstance(outbound_obj['url'], str) and (outbound_obj['url'].startswith('http://') or outbound_obj['url'].startswith('https://')):
                         extracted_links.append({'protocol': 'subscription', 'link': outbound_obj['url']})
                         print(f"ConfigParser: Found SingBox subscription URL in urltest outbound: {outbound_obj['url']}. Added for discovery.")
@@ -242,6 +244,11 @@ class ConfigParser:
         """
         if not settings.ENABLE_JSON_PARSER:
             print("ConfigParser: Generic JSON parser is disabled in settings.")
+            return []
+
+        # Optimization: Only attempt to parse as JSON if it looks like a config.
+        if not (content.strip().startswith('{') or content.strip().startswith('[')):
+            print(f"ConfigParser: Content does not look like a generic JSON (heuristic check). Skipping generic JSON parser. Content starts with: '{content[:50]}...'")
             return []
 
         extracted_links: List[Dict] = []
@@ -271,13 +278,14 @@ class ConfigParser:
         all_extracted_links: List[Dict] = []
         print(f"\nConfigParser: Starting content parsing process for input of length {len(content)}.")
 
-        # 1. First, extract direct links from raw content
+        # 1. First, extract direct links from raw content (most common for Telegram messages)
         print("ConfigParser: Attempting to extract direct links from raw content.")
         direct_links = self._extract_direct_links(content)
         all_extracted_links.extend(direct_links)
         print(f"ConfigParser: Found {len(direct_links)} direct links from raw content.")
 
-        # 2. Decode Base64 and then parse the decoded content
+        # 2. Try Base64 decoding and then parse the decoded content
+        # This is high priority because many sources are base64 encoded lists of links
         print("ConfigParser: Attempting Base64 decoding and subsequent parsing.")
         decoded_content = self._decode_base64(content)
         if decoded_content:
@@ -286,6 +294,9 @@ class ConfigParser:
             all_extracted_links.extend(base64_links)
             print(f"ConfigParser: Found {len(base64_links)} links from decoded Base64 content directly.")
 
+            # After decoding, the content *could* be a Clash/SingBox/Generic JSON.
+            # So, we attempt to parse it as those formats as well.
+            print("ConfigParser: Attempting to parse decoded Base64 content as Clash/SingBox/JSON.")
             all_extracted_links.extend(self._parse_clash_config(decoded_content))
             all_extracted_links.extend(self._parse_singbox_config(decoded_content))
             all_extracted_links.extend(self._parse_json_content(decoded_content))
@@ -293,25 +304,24 @@ class ConfigParser:
             print("ConfigParser: Base64 decoding failed or resulted in no relevant content.")
 
 
-        # 3. Parse Clash (YAML) from raw content (if not already parsed from decoded content)
-        # This is important because sometimes the raw content itself is a Clash config, not base64.
-        # Only try if we didn't get any links from direct parsing of raw, and decoded content didn't yield Clash links
-        print("ConfigParser: Attempting to parse Clash config from raw content.")
-        clash_links = self._parse_clash_config(content)
-        all_extracted_links.extend(clash_links)
-        print(f"ConfigParser: Found {len(clash_links)} links from raw Clash parsing.")
+        # 3. If no direct or base64 links were found so far, then try parsing raw content as Clash/SingBox/Generic JSON.
+        # This prevents trying to parse simple text/Base64 as JSON/YAML.
+        if not all_extracted_links:
+            print("ConfigParser: No links found from direct or Base64 parsing. Attempting other formats on raw content.")
+            clash_links = self._parse_clash_config(content)
+            all_extracted_links.extend(clash_links)
+            print(f"ConfigParser: Found {len(clash_links)} links from raw Clash parsing.")
 
-        # 4. Parse SingBox (JSON) from raw content
-        print("ConfigParser: Attempting to parse SingBox config from raw content.")
-        singbox_links = self._parse_singbox_config(content)
-        all_extracted_links.extend(singbox_links)
-        print(f"ConfigParser: Found {len(singbox_links)} links from raw SingBox parsing.")
+            singbox_links = self._parse_singbox_config(content)
+            all_extracted_links.extend(singbox_links)
+            print(f"ConfigParser: Found {len(singbox_links)} links from raw SingBox parsing.")
 
-        # 5. Parse generic JSON from raw content
-        print("ConfigParser: Attempting to parse generic JSON from raw content.")
-        json_links = self._parse_json_content(content)
-        all_extracted_links.extend(json_links)
-        print(f"ConfigParser: Found {len(json_links)} links from raw generic JSON parsing.")
+            json_links = self._parse_json_content(content)
+            all_extracted_links.extend(json_links)
+            print(f"ConfigParser: Found {len(json_links)} links from raw generic JSON parsing.")
+        else:
+            print("ConfigParser: Links already found from direct or Base64 parsing. Skipping raw Clash/SingBox/JSON parsing.")
+
 
         # Remove duplicate links before returning
         unique_links = list({link['link']: link for link in all_extracted_links}.values())
