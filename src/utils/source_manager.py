@@ -4,7 +4,6 @@ from src.utils.settings_manager import settings
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Set
 import re
-from urllib.parse import urlparse, parse_qs # Added for parsing MTProto links
 
 class SourceManager:
     def __init__(self):
@@ -115,15 +114,13 @@ class SourceManager:
 
     def add_telegram_channel(self, channel_username: str) -> bool:
         """
-        Adds a new Telegram channel to the list of active channels,
-        applying advanced filtering.
+        Adds a new Telegram channel to the list of active channels.
         """
         standardized_channel = self._standardize_channel_username(channel_username)
         if not standardized_channel:
             print(f"SourceManager: Channel '{channel_username}' failed standardization or was filtered by basic rules (e.g., bot, too short, irrelevant name). Not adding.")
             return False
 
-        # RE-ENABLED: Advanced filtering for Telegram channels
         if self._should_ignore_telegram_channel(standardized_channel):
             print(f"SourceManager: Ignoring Telegram channel '{standardized_channel}' based on advanced filtering rules. Not adding.")
             return False
@@ -155,9 +152,8 @@ class SourceManager:
     def add_website(self, url: str) -> bool:
         """
         Adds a new website URL to the list of active websites.
-        Advanced filtering is RE-ENABLED.
         """
-        # RE-ENABLED: Advanced filtering for websites
+        # NEW: Removed GitHub domains from being explicitly avoided in filtering.
         if self._should_ignore_website_url(url):
             print(f"SourceManager: Ignoring website URL '{url}' based on advanced filtering rules. Not adding.")
             return False
@@ -197,7 +193,7 @@ class SourceManager:
                channel_username not in self.timeout_telegram_channels:
                 self._move_telegram_to_timeout(channel_username, self._all_telegram_scores[channel_username])
             elif self._all_telegram_scores[channel_username] > settings.MAX_TIMEOUT_SCORE_TELEGRAM and \
-                 channel_username in self.timeout_telegram_channels: # If it's recovered manually or score improved significantly
+                 channel_username in self.timeout_telegram_channels:
                 print(f"SourceManager: Channel '{channel_username}' has improved score ({self._all_telegram_scores[channel_username]}) and is no longer at timeout threshold. Removing from timeout list if present.")
                 self.telegram_channels.add(channel_username)
                 self.timeout_telegram_channels.pop(channel_username, None)
@@ -205,7 +201,7 @@ class SourceManager:
         else:
             print(f"SourceManager: WARNING: Attempted to update score for unknown Telegram channel '{channel_username}'. Initializing with score {score_change}.")
             self._all_telegram_scores[channel_username] = score_change
-            if self._all_telegram_scores[channel_name] <= settings.MAX_TIMEOUT_SCORE_TELEGRAM:
+            if self._all_telegram_scores[channel_username] <= settings.MAX_TIMEOUT_SCORE_TELEGRAM:
                  self._move_telegram_to_timeout(channel_username, self._all_telegram_scores[channel_username])
 
 
@@ -220,7 +216,7 @@ class SourceManager:
                url not in self.timeout_websites:
                 self._move_website_to_timeout(url, self._all_website_scores[url])
             elif self._all_website_scores[url] > settings.MAX_TIMEOUT_SCORE_WEB and \
-                 url in self.timeout_websites: # If it's recovered manually or score improved significantly
+                 url in self.timeout_websites:
                 print(f"SourceManager: Website '{url}' has improved score ({self._all_website_scores[url]}) and is no longer at timeout threshold. Removing from timeout list if present.")
                 self.websites.add(url)
                 self.timeout_websites.pop(url, None)
@@ -253,9 +249,6 @@ class SourceManager:
                not self._is_timed_out_telegram_channel(channel) and \
                self._is_whitelisted_telegram_channel(channel):
                 eligible_channels.append(channel)
-            # else:
-                # print(f"SourceManager: Channel '{channel}' is NOT eligible (blacklisted, timed out, or not whitelisted).")
-
         sorted_channels = sorted(eligible_channels, key=lambda ch: self._all_telegram_scores.get(ch, 0), reverse=True)
         print(f"SourceManager: Returning {len(sorted_channels)} active Telegram channels.")
         return sorted_channels
@@ -268,9 +261,6 @@ class SourceManager:
                not self._is_timed_out_website(website) and \
                self._is_whitelisted_website(website):
                 eligible_websites.append(website)
-            # else:
-                # print(f"SourceManager: Website '{website}' is NOT eligible (blacklisted, timed out, or not whitelisted).")
-
         sorted_websites = sorted(eligible_websites, key=lambda w: self._all_website_scores.get(w, 0), reverse=True)
         print(f"SourceManager: Returning {len(sorted_websites)} active websites.")
         return sorted_websites
@@ -280,8 +270,6 @@ class SourceManager:
         timeout_list: List[Dict] = []
         for channel, data in self.timeout_telegram_channels.items():
             timeout_list.append({"channel": channel, "score": data.get("score", 0), "last_timeout": data.get("last_timeout")})
-
-        # Sort by score in descending order (highest score first, which means least negative)
         return sorted(timeout_list, key=lambda item: item["score"], reverse=True)
 
     def get_timed_out_websites(self) -> List[Dict]:
@@ -289,8 +277,6 @@ class SourceManager:
         timeout_list: List[Dict] = []
         for website, data in self.timeout_websites.items():
             timeout_list.append({"website": website, "score": data.get("score", 0), "last_timeout": data.get("last_timeout")})
-
-        # Sort by score in descending order (highest score first, which means least negative)
         return sorted(timeout_list, key=lambda item: item["score"], reverse=True)
 
 
@@ -331,4 +317,79 @@ class SourceManager:
             last_timeout_str = self.timeout_websites[url].get("last_timeout")
             if last_timeout_str:
                 last_timeout_dt = datetime.fromisoformat(last_timeout_str)
-                is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_
+                is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_RECOVERY_DURATION
+                if is_timed_out_still:
+                    print(f"SourceManager: Website '{url}' is still timed out. Will recover in {(settings.TIMEOUT_RECOVERY_DURATION - (datetime.now(timezone.utc) - last_timeout_dt)).total_seconds() / 86400:.2f} days.")
+                return is_timed_out_still
+        return False
+
+    def finalize(self):
+        """Saves all current source lists and timeout lists to files."""
+        print("SourceManager: Finalizing and saving source manager state...")
+        self._save_sources_to_file(self.telegram_channels, settings.CHANNELS_FILE)
+        self._save_sources_to_file(self.websites, settings.WEBSITES_FILE)
+
+        current_utc_iso = datetime.now(timezone.utc).isoformat()
+        for channel, score in self._all_telegram_scores.items():
+            self.timeout_telegram_channels[channel] = {
+                "score": score,
+                "last_timeout": self.timeout_telegram_channels.get(channel, {}).get("last_timeout", current_utc_iso)
+            }
+        for website, score in self._all_website_scores.items():
+            self.timeout_websites[website] = {
+                "score": score,
+                "last_timeout": self.timeout_websites.get(website, {}).get("last_timeout", current_utc_iso)
+            }
+
+        self._save_timeout_sources(self.timeout_telegram_channels, settings.TIMEOUT_TELEGRAM_CHANNELS_FILE)
+        self._save_timeout_sources(self.timeout_websites, settings.TIMEOUT_WEBSITES_FILE)
+        print("SourceManager: Source manager state saved.")
+
+    def _standardize_channel_username(self, raw_input: str) -> Optional[str]:
+        """
+        Standardizes Telegram channel username from various URL formats.
+        """
+        original_input = raw_input
+        username = raw_input.replace('https://t.me/s/', '').replace('https://t.me/', '').replace('t.me/s/', '').replace('t.me/', '')
+        
+        if username.endswith('/'):
+            username = username[:-1]
+
+        username = re.sub(r'[^a-zA-Z0-9_]', '', username) 
+
+        if not username:
+            print(f"SourceManager: Standardization failed: input '{original_input}' resulted in empty username after cleaning.")
+            return None
+
+        username_lower = username.lower()
+        if username_lower.endswith("bot") or \
+           username_lower in ['proxy', 'img', 'emoji', 'joinchat', 's', '']:
+            print(f"SourceManager: Standardization filtered by basic rules: '{original_input}' (cleaned to '{username}') matches a common irrelevant name/pattern.")
+            return None
+        
+        if not username.startswith('@'):
+            username = '@' + username
+        
+        if len(username) < 6:
+            print(f"SourceManager: Standardization filtered by length: '{original_input}' (cleaned to '{username}') is too short.")
+            return None
+
+        print(f"SourceManager: Standardized '{original_input}' to '{username}'.")
+        return username.strip()
+
+    # --- Advanced Filtering Logic ---
+    def _should_ignore_telegram_channel(self, channel_username: str) -> bool:
+        """
+        Checks if a Telegram channel should be ignored based on its name.
+        """
+        username_lower = channel_username.lower().lstrip('@')
+        
+        if username_lower in ['proxy', 'img', 'emoji', 'joinchat', 's', '']:
+            print(f"SourceManager: Ignoring Telegram channel '{channel_username}' (common irrelevant name in _should_ignore).")
+            return True
+        
+        mtproto_like_pattern = re.compile(r'^(?:proxyserver|proxy|mtproto|server|config)[a-zA-Z0-9]{5,}', re.IGNORECASE)
+        long_random_looking_pattern = re.compile(r'.*[a-zA-Z0-9]{10,}(?:ampport|secret|media)\b.*', re.IGNORECASE)
+
+        if mtproto_like_pattern.search(username_lower) or long_random_looking_pattern.search(username_lower):
+            print(f
