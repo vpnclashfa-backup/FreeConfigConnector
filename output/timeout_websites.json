@@ -1,0 +1,78 @@
+{
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/reality": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165133+00:00"
+    },
+    "https://raw.githubusercontent.com/hiddify/hiddify-next/refs/heads/main/test.configs/warp": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165179+00:00"
+    },
+    "https://raw.githubusercontent.com/4n0nymou3/wg-config-fetcher/refs/heads/main/configs/wireguard_configs.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165226+00:00"
+    },
+    "https://raw.githubusercontent.com/maimengmeng/mysub/refs/heads/main/valid_content_all.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165268+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_4.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165311+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_4.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165349+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_2.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165385+00:00"
+    },
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/tuic": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165450+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_3.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165490+00:00"
+    },
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/juicity": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165549+00:00"
+    },
+    "https://raw.githubusercontent.com/huibq/trojanlinks/refs/heads/master/links/ssr": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165590+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_1.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165631+00:00"
+    },
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/hysteria": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165670+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_3.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165724+00:00"
+    },
+    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/countries/ir/mixed": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165765+00:00"
+    },
+    "https://raw.githubusercontent.com/4n0nymou3/ss-config-updater/refs/heads/main/configs.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165803+00:00"
+    },
+    "https://raw.githubusercontent.com/ircfspace/warpsub/refs/heads/main/export/warp": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165848+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mtn/sub_2.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165889+00:00"
+    },
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt": {
+        "score": -20,
+        "last_timeout": "2025-07-04T15:24:38.165929+00:00"
+    }
+}
