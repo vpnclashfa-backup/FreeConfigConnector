@@ -2,6 +2,7 @@ import json
 import os
 from datetime import timedelta
 from typing import Optional, Dict, List
+import re # NEW: Import the 're' module for regular expressions
 
 class Settings:
     def __init__(self, config_file: str = 'settings/config.json'):
@@ -116,10 +117,5 @@ class Settings:
         self.IGNORE_GITHUB_RAW_URLS: bool = self.config_data.get('filters', {}).get('ignore_github_raw_urls', False)
         
         # Ensure regex patterns are compiled from the list loaded from config.json
-        # The default list in config.json is also set to just 'bot$'
         self.TELEGRAM_CHANNEL_IGNORE_PATTERNS: List[re.Pattern] = [
-            re.compile(pattern) for pattern in self.config_data.get('filters', {}).get('telegram_channel_ignore_patterns', [r'bot$'])
-        ]
-
-
-settings = Settings()
+            re.compile(pattern) for pattern
