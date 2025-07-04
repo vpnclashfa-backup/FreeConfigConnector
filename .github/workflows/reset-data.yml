@@ -4,13 +4,13 @@ on:
   workflow_dispatch: # رویداد: اجازه اجرای دستی از رابط کاربری GitHub را می‌دهد
     inputs:
       confirm_reset:
-        description: 'آیا از ریست کردن تمام آمار و تایم‌اوت‌ها مطمئن هستید؟ برای تایید "بله" را تایپ کنید.'
+        description: 'آیا از ریست کردن کامل تمام داده‌های جمع‌آوری شده (شامل حذف پوشه output) مطمئن هستید؟ برای تایید "بله" را تایپ کنید.'
         required: true
         type: string
         default: 'خیر' # 'no' in Farsi
 
 jobs:
-  reset-stats-and-timeouts:
+  reset-all-data: # نام Job تغییر کرد تا بهتر هدفش رو نشون بده (ریست کامل)
     runs-on: ubuntu-latest
     permissions:
       contents: write # برای Push کردن تغییرات لازم است
@@ -26,19 +26,26 @@ jobs:
             echo "ریست تایید نشد. بدون تغییرات خارج می‌شود."
             exit 1
           fi
-          echo "ریست تایید شد. ادامه عملیات ریست."
+          echo "ریست کامل تایید شد. ادامه عملیات."
 
-      - name: Reset Statistics and Timeouts # حذف فایل‌های آمار و تایم‌اوت
+      - name: Remove Output Folder and Reset Sources # حذف پوشه output و بازنشانی فایل‌های منبع
         run: |
-          echo "حذف فایل‌های گزارش و تایم‌اوت..."
-          # از 'git rm -f' برای حذف فایل‌هایی که ممکن است قبلاً به Git اضافه شده باشند استفاده می‌کنیم.
-          # '|| true' اضافه شده تا اگر فایل وجود نداشت، دستور با خطا مواجه نشود و ادامه یابد.
-          git rm -f output/timeout_telegram_channels.json || true
-          git rm -f output/timeout_websites.json || true
-          git rm -f output/report.md || true
-          # اگر collected_links.json را هم می‌خواهید پاک کنید:
-          # git rm -f output/collected_links.json || true
-          echo "فایل‌ها حذف شدند."
+          echo "حذف کامل پوشه 'output/'..."
+          # از 'git rm -rf' برای حذف کامل پوشه output استفاده می‌کنیم.
+          # '|| true' اضافه شده تا اگر پوشه وجود نداشت، دستور با خطا مواجه نشود و ادامه یابد.
+          git rm -rf output/ || true
+          
+          echo "بازنشانی فایل‌های منبع (کانال‌ها و وب‌سایت‌ها)..."
+          # این کار باعث می‌شود برنامه از یک لیست خالی/پیش‌فرض شروع به کشف منابع کند.
+          echo "" > sources/channels.txt # فایل کانال‌ها را خالی می‌کند
+          echo "" > sources/websites.txt # فایل وب‌سایت‌ها را خالی می‌کند
+          git add sources/channels.txt sources/websites.txt # اضافه کردن تغییرات بازنشانی به Git
+          
+          # حذف فایل‌های کشف شده (discovered sources)
+          git rm -f sources/discovered_telegram_channels.txt || true
+          git rm -f sources/discovered_websites.txt || true
+
+          echo "عملیات حذف و بازنشانی به پایان رسید."
 
       - name: Configure Git # پیکربندی Git برای Commit و Push
         run: |
@@ -47,11 +54,10 @@ jobs:
           
       - name: Commit and Push Reset # کامیت و Push کردن تغییرات ریست
         run: |
-          # 'git add -u' همه فایل‌های ردیابی شده که حذف شده‌اند را به مرحله آماده‌سازی اضافه می‌کند.
-          # این اطمینان می‌دهد که حتی اگر فایل‌ها قبلا توسط 'rm -f' حذف شده باشند، حذف آن‌ها ثبت شود.
-          git add -u output/ # اضافه کردن تمامی تغییرات (از جمله حذف فایل‌ها) در پوشه output
-          
-          git commit -m "Auto: Reset collection statistics and timeouts" || echo "No changes to commit (files might not have existed or were already removed)"
+          # 'git add -u .' همه فایل‌های ردیابی شده که حذف یا تغییر کرده‌اند را به مرحله آماده‌سازی اضافه می‌کند.
+          git add -u . 
+
+          git commit -m "Auto: Full reset - removed output folder and reset sources" || echo "No changes to commit (files might not have existed or were already removed)"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
