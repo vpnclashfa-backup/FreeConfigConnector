@@ -1,5 +1,5 @@
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class Hysteria2Validator(BaseValidator):
     @staticmethod
@@ -15,7 +15,10 @@ class Hysteria2Validator(BaseValidator):
             password_part = parsed_url.username # Hysteria2 uses username as password
             if not password_part: return False
 
-            host_port_part = parsed_url.netloc.split('@')[-1]
+            host_port_part = parsed_url.netloc
+            if '@' in host_port_part: # If password was explicitly in netloc
+                host_port_part = host_port_part.split('@', 1)[-1] # Take the host:port part
+            
             if ':' not in host_port_part: return False
 
             host, port_str = host_port_part.rsplit(':', 1)
@@ -28,7 +31,7 @@ class Hysteria2Validator(BaseValidator):
             query_params = parse_qs(parsed_url.query)
             # Hysteria2 always uses TLS, usually requires 'sni' or 'insecure=1' for self-signed
             if not ('sni' in query_params or ('insecure' in query_params and query_params['insecure'][0].lower() == '1')):
-                return False # Stronger check than Hysteria v1
+                return False # Stricter check than Hysteria v1
             
             return True
         except Exception:
@@ -45,6 +48,6 @@ class Hysteria2Validator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
