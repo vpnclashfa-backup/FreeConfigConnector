@@ -19,6 +19,19 @@ class Socks5Validator(BaseValidator):
                 return False
             
             host, port_str = host_port_part.rsplit(':', 1)
-            
-            if not BaseValidator._is_valid_port(int(port_str)):
+            port = int(port_str) # Ensure port is an integer
+
+            if not BaseValidator._is_valid_port(port):
                 return False
+            if not (BaseValidator._is_valid_domain(host) or BaseValidator._is_valid_ipv4(host) or BaseValidator._is_valid_ipv6(host)):
+                return False
+            return True
+        except ValueError: # Catch specific ValueError for int() conversion
+            return False
+        except Exception: # Catch any other unexpected errors during parsing
+            return False
+
+    @staticmethod
+    def clean(link: str) -> str:
+        # Socks5 links are generally clean, just strip whitespace
+        return link.strip()
