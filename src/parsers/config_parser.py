@@ -4,8 +4,11 @@ import re
 import yaml
 from typing import List, Dict, Optional, Tuple, Union
 
+# وارد کردن تعاریف پروتکل مرکزی و ConfigValidator
 from src.utils.protocol_definitions import get_active_protocol_info, get_combined_protocol_full_regex, ORDERED_PROTOCOLS_FOR_MATCHING
 from src.utils.config_validator import ConfigValidator
+
+# استفاده مستقیم از تنظیمات از utils
 from src.utils.settings_manager import settings
 
 
@@ -13,7 +16,7 @@ class ConfigParser:
     def __init__(self):
         self.config_validator = ConfigValidator()
         self.active_protocol_info = get_active_protocol_info()
-        self.combined_protocol_full_regex = get_combined_protocol_full_regex() # CHANGED: use full regex
+        self.combined_protocol_full_regex = get_combined_protocol_full_regex()
         self.ordered_protocols_for_matching = ORDERED_PROTOCOLS_FOR_MATCHING
 
         print("ConfigParser: Initialized with new modular validation system.")
@@ -41,8 +44,8 @@ class ConfigParser:
                     is_reality_candidate = True
                     print(f"ConfigParser: Candidate '{candidate[:100]}...' identified as a potential Reality link (VLESS variant).")
                     
-                    cleaned_candidate = self.config_validator.clean_protocol_config(candidate, 'reality')
-                    if self.config_validator.validate_protocol_config(cleaned_candidate, 'reality'):
+                    cleaned_candidate = self.config_validator.clean_protocol_config(candidate, 'reality') # Clean as reality
+                    if self.config_validator.validate_protocol_config(cleaned_candidate, 'reality'): # Validate as reality
                         found_links.append({'protocol': 'reality', 'link': cleaned_candidate})
                         print(f"ConfigParser: VALID Reality link found: {cleaned_candidate[:100]}...")
                         continue # Move to next candidate, as Reality is a VLESS variant, we don't need to re-check as VLESS
@@ -85,17 +88,24 @@ class ConfigParser:
             print("ConfigParser: Base64 decoding is disabled in settings.")
             return None
 
+        # NEW OPTIMIZATION: Only attempt decoding if the string looks like valid base64 characters.
+        # This avoids trying to decode random text/HTML as base64, which is often the cause of errors.
+        if not self.config_validator.is_base64(content.strip()):
+            print(f"ConfigParser: Content does not look like valid Base64 (heuristic check). Skipping Base64 decoding for content starting with: '{content[:50]}...'")
+            return None
+
+
         print(f"ConfigParser: Attempting to decode Base64 content (length: {len(content)}).")
         decoded_str = self.config_validator.decode_base64_text(content)
         if decoded_str:
-            # CHANGED: Use full regex for more robust check on decoded content
-            # And also check length after stripping whitespace, to avoid decoding small irrelevant strings
+            # Check length after stripping whitespace, to avoid decoding small irrelevant strings
+            # And use full regex for more robust check on decoded content
             if len(decoded_str.strip()) > 10 and self.combined_protocol_full_regex.search(decoded_str):
                 print("ConfigParser: Base64 content successfully decoded and contains potential links. Proceeding with parsing decoded content.")
                 return decoded_str
             print("ConfigParser: Base64 decoded, but content does not seem to contain valid configs or protocol links.")
             return None
-        print("ConfigParser: Failed to decode content as Base64 (might not be Base64).")
+        print("ConfigParser: Failed to decode content as Base64.")
         return None
 
     def _parse_clash_config(self, content: str) -> List[Dict]:
@@ -107,12 +117,17 @@ class ConfigParser:
             return []
 
         # Optimization: Only attempt to parse as YAML/JSON if it looks like a config.
+        # A simple heuristic: check if it starts with 'proxies:', 'port:', '{', '[', or other YAML/JSON markers.
         # This prevents trying to parse random text as YAML/JSON.
-        # A simple heuristic: check if it starts with 'proxies:', 'port:', '{', '[', etc.
-        # Or if it's already identified as a base64 string.
-        # For simplicity, if it's short or contains common non-config text, skip.
-        if len(content) < 50 or not (content.strip().startswith('proxies:') or content.strip().startswith('proxy-providers:') or content.strip().startswith('{') or content.strip().startswith('[')):
-            print(f"ConfigParser: Content does not look like a Clash config (heuristic check). Skipping Clash parser. Content starts with: '{content[:50]}...'")
+        content_stripped = content.strip()
+        if len(content_stripped) < 50 or not (
+            content_stripped.startswith('proxies:') or 
+            content_stripped.startswith('proxy-providers:') or 
+            content_stripped.startswith('-') or # Common for YAML lists
+            content_stripped.startswith('{') or 
+            content_stripped.startswith('[')
+        ):
+            print(f"ConfigParser: Content does not look like a Clash config (heuristic check). Skipping Clash parser. Content starts with: '{content_stripped[:50]}...'")
             return []
 
         extracted_links: List[Dict] = []
@@ -120,7 +135,7 @@ class ConfigParser:
         try:
             clash_data = yaml.safe_load(content)
             if not isinstance(clash_data, dict):
-                print(f"ConfigParser: Clash content is not a valid YAML dictionary. Skipping. Content starts with: '{content[:50]}...'")
+                print(f"ConfigParser: Clash content is not a valid YAML dictionary. Skipping. Content starts with: '{content_stripped[:50]}...'")
                 return []
 
             proxies = clash_data.get('proxies', [])
@@ -135,7 +150,7 @@ class ConfigParser:
                             ss_link = f"ss://{encoded_method_pass}@{proxy_obj['server']}:{proxy_obj['port']}"
                             if 'name' in proxy_obj:
                                 from urllib.parse import quote
-                                ss_link += f"#{quote(str(proxy_obj['name']))}"
+                                ss_link += f"#{quote(str(proxy_obj['name']))}" # Ensure name is string and URL-encoded
 
                             cleaned_ss_link = self.config_validator.clean_protocol_config(ss_link, 'ss')
                             if self.config_validator.validate_protocol_config(cleaned_ss_link, 'ss'):
@@ -166,7 +181,7 @@ class ConfigParser:
                                 extracted_links.append({'protocol': 'ssr', 'link': cleaned_ssr_link})
                                 print(f"ConfigParser: Successfully reconstructed and validated SSR link from Clash proxy: {cleaned_ssr_link[:100]}...")
                             else:
-                                print(f"ConfigParser: Reconstructed SSR link from Clash proxy failed validation: {cleaned_ssr_link[:100]}...")
+                                print(f"ConfigParser: Reconstructed SSR link from Clash proxy failed validation: {cleaned_link[:100]}...")
                         except Exception as e:
                             print(f"ConfigParser: ERROR reconstructing/validating SSR link from Clash: {e}. Proxy obj: {proxy_obj}")
 
@@ -187,7 +202,7 @@ class ConfigParser:
 
             print(f"ConfigParser: Clash config parsed successfully. Total links extracted: {len(extracted_links)}.")
         except yaml.YAMLError as e:
-            print(f"ConfigParser: ERROR: Invalid YAML format for Clash config: {e}. Content starts with: '{content[:100]}...'")
+            print(f"ConfigParser: ERROR: Invalid YAML format for Clash config: {e}. Content starts with: '{content_stripped[:100]}...'")
         except Exception as e:
             print(f"ConfigParser: ERROR parsing Clash configuration: {e}")
             traceback.print_exc()
@@ -202,9 +217,9 @@ class ConfigParser:
             return []
 
         # Optimization: Only attempt to parse as JSON if it looks like a config.
-        # Simple heuristic: must start with '{' or '['
-        if not (content.strip().startswith('{') or content.strip().startswith('[')):
-            print(f"ConfigParser: Content does not look like a SingBox config (heuristic check). Skipping SingBox parser. Content starts with: '{content[:50]}...'")
+        content_stripped = content.strip()
+        if not (content_stripped.startswith('{') or content_stripped.startswith('[')):
+            print(f"ConfigParser: Content does not look like a SingBox config (heuristic check). Skipping SingBox parser. Content starts with: '{content_stripped[:50]}...'")
             return []
 
         extracted_links: List[Dict] = []
@@ -212,14 +227,14 @@ class ConfigParser:
         try:
             singbox_data = json.loads(content)
             if not isinstance(singbox_data, dict):
-                print(f"ConfigParser: SingBox content is not a valid JSON dictionary. Skipping. Content starts with: '{content[:50]}...'")
+                print(f"ConfigParser: SingBox content is not a valid JSON dictionary. Skipping. Content starts with: '{content_stripped[:50]}...'")
                 return []
 
             outbounds = singbox_data.get('outbounds', [])
             print(f"ConfigParser: Found {len(outbounds)} outbounds in SingBox config.")
             for outbound_obj in outbounds:
                 if isinstance(outbound_obj, dict):
-                    if 'type' in outbound_obj and outbound_obj['type'] not in ['direct', 'block', 'selector', 'urltest', 'fallback', 'loadbalance', 'dns', 'http', 'socks']:
+                    if 'type' in outbound_obj and outbound_obj['type'] not in ['direct', 'block', 'selector', 'urltest', 'fallback', 'loadbalance', 'dns', 'http', 'socks'] : # Exclude common non-proxy outbound types
                         outbound_str = json.dumps(outbound_obj)
                         direct_links_from_outbound = self._extract_direct_links(outbound_str)
                         extracted_links.extend(direct_links_from_outbound)
@@ -232,7 +247,7 @@ class ConfigParser:
 
             print(f"ConfigParser: SingBox config parsed successfully. Total links extracted: {len(extracted_links)}.")
         except json.JSONDecodeError as e:
-            print(f"ConfigParser: ERROR: Invalid JSON format for SingBox config: {e}. Content starts with: '{content[:100]}...'")
+            print(f"ConfigParser: ERROR: Invalid JSON format for SingBox config: {e}. Content starts with: '{content_stripped[:100]}...'")
         except Exception as e:
             print(f"ConfigParser: ERROR parsing SingBox configuration: {e}")
             traceback.print_exc()
@@ -247,8 +262,9 @@ class ConfigParser:
             return []
 
         # Optimization: Only attempt to parse as JSON if it looks like a config.
-        if not (content.strip().startswith('{') or content.strip().startswith('[')):
-            print(f"ConfigParser: Content does not look like a generic JSON (heuristic check). Skipping generic JSON parser. Content starts with: '{content[:50]}...'")
+        content_stripped = content.strip()
+        if not (content_stripped.startswith('{') or content_stripped.startswith('[')):
+            print(f"ConfigParser: Content does not look like a generic JSON (heuristic check). Skipping generic JSON parser. Content starts with: '{content_stripped[:50]}...'")
             return []
 
         extracted_links: List[Dict] = []
@@ -263,7 +279,7 @@ class ConfigParser:
 
             print(f"ConfigParser: Generic JSON content parsed successfully. Total links extracted: {len(extracted_links)}.")
         except json.JSONDecodeError as e:
-            print(f"ConfigParser: ERROR: Invalid JSON format for generic JSON content: {e}. Content starts with: '{content[:100]}...'")
+            print(f"ConfigParser: ERROR: Invalid JSON format for generic JSON content: {e}. Content starts with: '{content_stripped[:100]}...'")
         except Exception as e:
             print(f"ConfigParser: ERROR parsing generic JSON content: {e}")
             traceback.print_exc()
@@ -306,7 +322,7 @@ class ConfigParser:
 
         # 3. If no direct or base64 links were found so far, then try parsing raw content as Clash/SingBox/Generic JSON.
         # This prevents trying to parse simple text/Base64 as JSON/YAML.
-        if not all_extracted_links:
+        if not all_extracted_links: # Only attempt these if nothing found yet
             print("ConfigParser: No links found from direct or Base64 parsing. Attempting other formats on raw content.")
             clash_links = self._parse_clash_config(content)
             all_extracted_links.extend(clash_links)
@@ -320,7 +336,7 @@ class ConfigParser:
             all_extracted_links.extend(json_links)
             print(f"ConfigParser: Found {len(json_links)} links from raw generic JSON parsing.")
         else:
-            print("ConfigParser: Links already found from direct or Base64 parsing. Skipping raw Clash/SingBox/JSON parsing.")
+            print(f"ConfigParser: Links already found from direct or Base64 parsing. Skipping raw Clash/SingBox/JSON parsing. Total found so far: {len(all_extracted_links)}")
 
 
         # Remove duplicate links before returning
