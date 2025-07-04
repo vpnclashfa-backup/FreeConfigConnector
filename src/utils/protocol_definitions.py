@@ -1,6 +1,6 @@
 import re
-from typing import Dict, List, Type, Union # Ensure Union is imported
-# NEW: Import all specific validators
+from typing import Dict, List, Type, Union
+
 from src.utils.protocol_validators.base_validator import BaseValidator
 from src.utils.protocol_validators.vmess_validator import VmessValidator
 from src.utils.protocol_validators.vless_validator import VlessValidator
@@ -26,83 +26,71 @@ from src.utils.settings_manager import settings
 # Define base protocol information including their prefixes and their validator classes.
 # This is the central registry for protocols.
 PROTOCOL_INFO_MAP: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {
-    "http": {"prefix": "http://", "validator": HttpValidator}, # Now uses specific validator
-    "socks5": {"prefix": "socks5://", "validator": Socks5Validator}, # Now uses specific validator
-    "ss": {"prefix": "ss://", "validator": SsValidator}, # Now uses specific validator
-    "ssr": {"prefix": "ssr://", "validator": SsrValidator}, # Now uses specific validator
-    "vmess": {"prefix": "vmess://", "validator": VmessValidator}, # Specific VMess validator
-    "vless": {"prefix": "vless://", "validator": VlessValidator}, # Specific Vless validator
-    "trojan": {"prefix": "trojan://", "validator": TrojanValidator}, # Now uses specific validator
-    "hysteria": {"prefix": "hysteria://", "validator": HysteriaValidator}, # Now uses specific validator
-    "hysteria2": {"prefix": "hy2://", "validator": Hysteria2Validator}, # Now uses specific validator
-    "tuic": {"prefix": "tuic://", "validator": TuicValidator}, # Now uses specific validator
-    "wireguard": {"prefix": "wireguard://", "validator": WireguardValidator}, # Now uses specific validator
-    "ssh": {"prefix": "ssh://", "validator": SshValidator}, # Now uses specific validator
-    "warp": {"prefix": "warp://", "validator": WarpValidator}, # Now uses specific validator
-    "juicity": {"prefix": "juicity://", "validator": JuicityValidator}, # Now uses specific validator
-    "mieru": {"prefix": "mieru://", "validator": MieruValidator}, # Now uses specific validator
-    "snell": {"prefix": "snell://", "validator": SnellValidator}, # Now uses specific validator
-    "anytls": {"prefix": "anytls://", "validator": AnytlsValidator}, # Now uses specific validator
-    # Add other protocols here with their specific validators when created
+    "http": {"prefix": "http://", "validator": HttpValidator},
+    "socks5": {"prefix": "socks5://", "validator": Socks5Validator},
+    "ss": {"prefix": "ss://", "validator": SsValidator},
+    "ssr": {"prefix": "ssr://", "validator": SsrValidator},
+    "vmess": {"prefix": "vmess://", "validator": VmessValidator},
+    "vless": {"prefix": "vless://", "validator": VlessValidator},
+    "trojan": {"prefix": "trojan://", "validator": TrojanValidator},
+    "hysteria": {"prefix": "hysteria://", "validator": HysteriaValidator},
+    "hysteria2": {"prefix": "hy2://", "validator": Hysteria2Validator},
+    "tuic": {"prefix": "tuic://", "validator": TuicValidator},
+    "wireguard": {"prefix": "wireguard://", "validator": WireguardValidator},
+    "ssh": {"prefix": "ssh://", "validator": SshValidator},
+    "warp": {"prefix": "warp://", "validator": WarpValidator},
+    "juicity": {"prefix": "juicity://", "validator": JuicityValidator},
+    "mieru": {"prefix": "mieru://", "validator": MieruValidator},
+    "snell": {"prefix": "snell://", "validator": SnellValidator},
+    "anytls": {"prefix": "anytls://", "validator": AnytlsValidator},
 }
 
-# Define an ordered list of protocols for matching. More specific protocols first.
-# This is important for cases like Reality (VLESS) which needs to be identified before generic VLESS.
 ORDERED_PROTOCOLS_FOR_MATCHING: List[str] = [
-    "reality", # Although not a direct prefix, it's a VLESS variant; handle its detection logic in VlessValidator
+    "reality",
     "vmess", "vless", "trojan", "ss", "ssr", "hysteria", "hysteria2",
     "tuic", "wireguard", "ssh", "warp", "juicity", "http", "socks5",
     "mieru", "snell", "anytls"
-    # Ensure this list covers all active_protocols from settings
-    # The order here is crucial for accurate categorization (more specific ones first)
 ]
 
 
 def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValidator]]]]:
-    """
-    Returns a map of active protocols to their full information (prefix, validator class).
-    Filters based on settings.ACTIVE_PROTOCOLS.
-    """
     active_info: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {}
     for protocol_name in settings.ACTIVE_PROTOCOLS:
         if protocol_name in PROTOCOL_INFO_MAP:
             active_info[protocol_name] = PROTOCOL_INFO_MAP[protocol_name]
         else:
-            # CHANGED: Log this warning only if it's not a known protocol in PROTOCOL_INFO_MAP
-            # AND if it's not 'reality' (as reality is handled specially)
             if protocol_name != 'reality':
                 print(f"protocol_definitions: WARNING: Protocol '{protocol_name}' in settings.ACTIVE_PROTOCOLS is not defined in PROTOCOL_INFO_MAP. Using generic handler.")
             active_info[protocol_name] = {"prefix": f"{protocol_name}://", "validator": BaseValidator}
     return active_info
 
-def get_combined_protocol_prefix_regex() -> re.Pattern:
+def get_combined_protocol_full_regex() -> re.Pattern: # <-- Function name changed to reflect "full" regex
     """
-    Returns a compiled RegEx pattern that can detect the *start* of any active protocol.
-    This is used for splitting long texts into potential config segments.
+    Returns a compiled RegEx pattern that can detect the *full* link of any active protocol.
+    This is used for splitting long texts into potential config segments more accurately.
     """
     active_protocols_info = get_active_protocol_info()
     
-    # Create a regex that matches the *start* of any active protocol (e.g., 'vless://', 'ss://')
-    # Escape the prefix to handle special regex characters like . or :
-    protocol_prefixes_list = []
+    # We need to build patterns like (?:vmess://[^\s]+) or (?:vless://[^\s]+)
+    # The [^\s]+ part captures everything until a whitespace or end of string.
+    full_patterns_list = []
     for info in active_protocols_info.values():
         prefix = info.get("prefix")
         if isinstance(prefix, str):
-            protocol_prefixes_list.append(re.escape(prefix))
+            # Escape the prefix and then append the non-whitespace capture group
+            full_patterns_list.append(r"(?:" + re.escape(prefix) + r"[^\s]+)")
 
     # Special handling for "ssh" if it needs alternative prefixes like "sftp://"
-    # We already have SSH validator covering "ssh://" and "sftp://" so this part is more about discovery regex
-    # Ensure sftp:// is part of the combined regex if SSH is active
     if "ssh" in settings.ACTIVE_PROTOCOLS and "sftp://" not in [info.get("prefix") for info in active_protocols_info.values()]:
-        protocol_prefixes_list.append(re.escape("sftp://")) # Add sftp prefix if ssh is active and sftp not explicitly in map
+        full_patterns_list.append(r"(?:" + re.escape("sftp://") + r"[^\s]+)") # Add sftp prefix as a full pattern
 
 
-    combined_prefix_regex_str = '|'.join(protocol_prefixes_list)
-    print(f"protocol_definitions: Generated combined regex string: {combined_prefix_regex_str}") # NEW: Log the generated regex string
+    combined_full_regex_str = '|'.join(full_patterns_list)
+    print(f"protocol_definitions: Generated combined FULL regex string: {combined_full_regex_str}")
 
-    if not combined_prefix_regex_str:
-        print("protocol_definitions: WARNING: No active protocols found to build combined regex. Returning empty match regex.") # Log warning
-        return re.compile(r'a^') # Matches nothing if no protocols are active
+    if not combined_full_regex_str:
+        print("protocol_definitions: WARNING: No active protocols found to build combined FULL regex. Returning empty match regex.")
+        return re.compile(r'a^')
 
-    # Use re.IGNORECASE for case-insensitive prefix matching (e.g., Vmess:// or vmess://)
-    return re.compile(combined_prefix_regex_str, re.IGNORECASE)
+    # Use re.IGNORECASE for case-insensitive matching
+    return re.compile(combined_full_regex_str, re.IGNORECASE)
