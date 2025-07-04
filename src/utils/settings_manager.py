@@ -106,6 +106,13 @@ class Settings:
         self.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.PROTOCOL_SPECIFIC_SUB_DIR_NAME)
         self.FULL_BASE64_PROTOCOL_SPECIFIC_DIR: str = os.path.join(self.FULL_BASE64_OUTPUT_PATH, self.PROTOCOL_SPECIFIC_SUB_DIR_NAME)
 
+
+        # Output Settings
+        self.PROTOCOLS_FOR_MIXED_OUTPUT: List[str] = self.config_data.get('output_settings', {}).get('protocols_for_mixed_output', [])
+        self.OUTPUT_HEADER_BASE64_ENABLED: bool = self.config_data.get('output_settings', {}).get('output_header_base64_enabled', True)
+        self.GENERATE_PROTOCOL_SPECIFIC_FILES: bool = self.config_data.get('output_settings', {}).get('generate_protocol_specific_files', True)
+        self.GENERATE_MIXED_PROTOCOL_FILE: bool = self.config_data.get('output_settings', {}).get('generate_mixed_protocol_file', True)
+
         # Report File Path
         self.REPORT_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('report_file', 'report.md'))
 
@@ -113,10 +120,27 @@ class Settings:
         self.ERROR_WARNING_LOG_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('error_warning_log_file', 'error_warnings.log'))
 
 
-        # Filters for GitHub/Website URLs (read from config.json)
+        # Filters (these patterns are now loaded from config, but kept default for convenience)
         self.IGNORE_GITHUB_GIST_URLS: bool = self.config_data.get('filters', {}).get('ignore_github_gist_urls', False)
         self.IGNORE_GITHUB_RAW_URLS: bool = self.config_data.get('filters', {}).get('ignore_github_raw_urls', False)
-        self.TELEGRAM_CHANNEL_IGNORE_PATTERNS: List[str] = self.config_data.get('filters', {}).get('telegram_channel_ignore_patterns', [])
-
-
-settings = Settings()
+        self.TELEGRAM_CHANNEL_IGNORE_PATTERNS: List[str] = self.config_data.get('filters', {}).get('telegram_channel_ignore_patterns', [
+            r'bot', r'dl', r'download', r'proxy', r'socks', r'http', # general keywords
+            r'vpn', r'account', r'test', r'check', r'online', r'offical', r'official',
+            r'list', r'channel', r'group', r'proxy', r'vpn', r'iran',
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', # IP addresses
+            r'[a-f0-9]{32}', # potential secrets, UUIDs
+            r'[\+\-\=\*\&]', # special characters that often appear in proxylinks, not channel names
+            r'ad', r'free', r'sell', r'buy', r'shop', r'store', r'trade', r'payment', # commercial keywords
+            r'mtproto', r'mtproxy', r'config', r'ss', r'ssr', 'v2ray', 'vless', 'trojan', 'juicity', 'hysteria', 'tuic', 'wireguard', 'ssh', 'warp', 'mieru', 'snell', 'anytls', 'reality', # protocol names
+            r'fast', r'speed', r'best', r'new', r'new_?vpn', r'update', r'daily', r'private', r'public', # quality/frequency keywords
+            r'file', r'files', r'zip', 'apk', 'exe', 'rar', 'tar', 'iso', 'img', # file related keywords
+            r'media', r'video', r'photo', 'music', 'film', 'movie', # media keywords
+            r'support', r'help', r'admin', r'official', r'bot', r'channel', r'group', # telegram related keywords
+            r'crypto', r'currency', r'bitcoin', r'usdt', r'wallet', # crypto keywords
+            r'game', r'gaming', r'dns', # gaming/network keywords
+            r'mahsa', r'erfnet', r'king', r'canfing', r'foxray', r'stresand', # specific channel/tool names
+            r'anon', r'anonymous', r'team', r'club', r'prof', r'plus', # organization/group names
+            r'light', r'dark', r'global', r'safe', r'secure', # general adjectives
+            r'server', r'ip', r'host', r'domain', r'url', r'address', # network identifiers
+            r'direct', r'manual', r'auto', r'config', r'profile', r'node', # config related
+            r'v2ray
