@@ -3,7 +3,7 @@ import base64
 import json
 import os
 import importlib
-from typing import Optional, Tuple, List, Dict, Type
+from typing import Optional, Tuple, List, Dict, Type, Union # Ensure Union is imported
 
 from src.utils.settings_manager import settings
 # NEW: Import the BaseValidator and PROTOCOL_INFO_MAP
@@ -20,6 +20,7 @@ class ConfigValidator:
         # Keep _all_protocol_prefixes for generic checks or when a specific validator isn't loaded
         # This will now use PROTOCOL_INFO_MAP prefixes.
         self._all_protocol_prefixes = {info["prefix"] for info in PROTOCOL_INFO_MAP.values() if isinstance(info["prefix"], str)}
+        print("ConfigValidator: Initialized. Loaded protocol validators.")
 
 
     def _load_protocol_validators(self) -> Dict[str, Type[BaseValidator]]:
@@ -34,16 +35,18 @@ class ConfigValidator:
             validator_class = info["validator"]
             if issubclass(validator_class, BaseValidator): # Ensure it's a valid validator class
                 validators_map[protocol_name] = validator_class
+                print(f"ConfigValidator: Loaded validator for protocol '{protocol_name}': {validator_class.__name__}") # Log each loaded validator
             else: 
-                print(f"Warning: Validator for protocol '{protocol_name}' is not a subclass of BaseValidator. Using generic BaseValidator.")
+                print(f"ConfigValidator: WARNING: Validator for protocol '{protocol_name}' is not a subclass of BaseValidator. Using generic BaseValidator.") # Warning for incorrect validator
                 validators_map[protocol_name] = BaseValidator
         
         return validators_map
 
 
-    # --- Base64 Validation and Decoding (UNCHANGED - these are generic and stay here) ---
+    # --- Base64 Validation and Decoding ---
     @staticmethod
     def is_base64(s: str) -> bool:
+        # print(f"ConfigValidator: Checking if string (length {len(s)}) is base64.") # Too verbose
         s_clean = s.rstrip('=')
         return bool(re.fullmatch(r'^[A-Za-z0-9+/_-]*$', s_clean))
 
@@ -56,10 +59,12 @@ class ConfigValidator:
                 s_padded += '=' * padding
             return base64.b64decode(s_padded)
         except Exception:
+            # print(f"ConfigValidator: Failed to decode URL-safe base64: {s[:50]}...") # Too verbose
             return None
 
     @staticmethod
     def decode_base64_text(text: str) -> Optional[str]:
+        # print(f"ConfigValidator: Attempting to decode text as base64 (length: {len(text)}).") # Detailed log
         try:
             decoded_bytes = base64.b64decode(text, validate=True)
             return decoded_bytes.decode('utf-8', errors='ignore')
@@ -70,38 +75,43 @@ class ConfigValidator:
                     return decoded_bytes.decode('utf-8', errors='ignore')
             except Exception:
                 pass
+        # print("ConfigValidator: Failed to decode text as base64.") # Detailed log
         return None
 
-    # --- Protocol-Specific Cleaning (REMOVED - now handled by protocol-specific validators) ---
-    # clean_vmess_config, normalize_hysteria2_protocol were already removed in step 4
-
-    # --- Centralized Protocol Validation (Dispatcher Logic - UNCHANGED from Step 4) ---
+    # --- Centralized Protocol Validation (Dispatcher Logic) ---
     def validate_protocol_config(self, config_link: str, protocol_name: str) -> bool:
         """
         اعتبارسنجی یک لینک کانفیگ با استفاده از Validator مخصوص پروتکل.
         """
         validator_class = self.protocol_validators.get(protocol_name)
         if validator_class:
-            return validator_class.is_valid(config_link)
+            is_valid = validator_class.is_valid(config_link)
+            # print(f"ConfigValidator: Validating '{protocol_name}' link '{config_link[:100]}...'. Result: {is_valid}") # Detailed log
+            if not is_valid:
+                print(f"ConfigValidator: VALIDATION FAILED for protocol '{protocol_name}' on link: {config_link[:200]}...") # Log failed validation
+            return is_valid
         
         # Fallback for unknown protocols, or protocols without specific validators
-        # This uses a very basic check if no specific validator is found
-        return self.is_valid_protocol_prefix(config_link) # Check if it at least starts with a known prefix
+        is_valid = self.is_valid_protocol_prefix(config_link)
+        # print(f"ConfigValidator: No specific validator for '{protocol_name}'. Falling back to prefix check. Result: {is_valid}") # Detailed fallback log
+        return is_valid
 
 
-    # --- Centralized Protocol Cleaning (Dispatcher Logic - UNCHANGED from Step 4) ---
+    # --- Centralized Protocol Cleaning (Dispatcher Logic) ---
     def clean_protocol_config(self, config_link: str, protocol_name: str) -> str:
         """
         پاکسازی یک لینک کانفیگ با استفاده از Cleaner مخصوص پروتکل.
         """
         validator_class = self.protocol_validators.get(protocol_name)
-        # Ensure the validator class has a 'clean' method (BaseValidator enforces this, but a safety check doesn't hurt)
         if validator_class and hasattr(validator_class, 'clean'):
-            return validator_class.clean(config_link)
+            cleaned_link = validator_class.clean(config_link)
+            # if cleaned_link != config_link: print(f"ConfigValidator: Cleaned '{protocol_name}' link. Original: {config_link[:50]}... -> Cleaned: {cleaned_link[:50]}...") # Log if changed
+            return cleaned_link
+        # print(f"ConfigValidator: No specific cleaner for '{protocol_name}'. Returning original link: {config_link[:50]}...") # Detailed log
         return config_link # Return original if no specific cleaner is found
 
 
-    # --- General Cleaning and Splitting from Text (UNCHANGED from Step 4) ---
+    # --- General Cleaning and Splitting from Text ---
     @staticmethod
     def clean_string_for_splitting(text: str) -> str:
         """
@@ -123,9 +133,11 @@ class ConfigValidator:
 
         # Apply minimal cleaning first
         cleaned_full_text = self.clean_string_for_splitting(text)
+        # if not cleaned_full_text: print("ConfigValidator: Cleaned text is empty after preliminary cleaning.") # Log if empty
 
         # Find all occurrences of known protocol prefixes.
         protocol_start_matches = list(self.combined_protocol_prefix_regex.finditer(cleaned_full_text))
+        # print(f"ConfigValidator: Found {len(protocol_start_matches)} protocol start matches in text.") # Detailed log
 
         if not protocol_start_matches:
             return []
@@ -163,17 +175,23 @@ class ConfigValidator:
             junk_match = trailing_junk_pattern.search(raw_segment)
             if junk_match:
                 final_config_str = raw_segment[:junk_match.start()].strip()
+                # print(f"ConfigValidator: Stripped trailing junk. Original: '{raw_segment[:50]}...' -> Cleaned: '{final_config_str[:50]}...'") # Log if junk removed
             else:
                 final_config_str = raw_segment.strip()
 
             # Final check that it still looks like a valid config start after cleaning
             if final_config_str and self.is_valid_protocol_prefix(final_config_str):
                 extracted_raw_configs.append(final_config_str)
+            # else:
+                # if final_config_str: print(f"ConfigValidator: Final candidate '{final_config_str[:50]}...' did not start with a valid protocol prefix.") # Detailed log
+                # else: print("ConfigValidator: Final candidate was empty.") # Detailed log
 
+        # print(f"ConfigValidator: Finished splitting. Extracted {len(extracted_raw_configs)} raw config candidates.") # Summary log
         return extracted_raw_configs
 
     def is_valid_protocol_prefix(self, config_str: str) -> bool:
         """
         بررسی می‌کند که آیا یک رشته با هر پیشوند پروتکل شناخته شده‌ای شروع می‌شود یا خیر.
         """
+        # print(f"ConfigValidator: Checking prefix for '{config_str[:50]}...'") # Too verbose
         return any(config_str.startswith(p) for p in self._all_protocol_prefixes)
