@@ -1,6 +1,7 @@
 import base64
+import re
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class SsrValidator(BaseValidator):
     @staticmethod
@@ -8,9 +9,9 @@ class SsrValidator(BaseValidator):
         if not link.startswith("ssr://"):
             return False
         try:
-            # SSR links are usually ssr://base64encoded_all_params
-            base64_part = link[6:]
-            
+            base64_part_with_tag = link[6:]
+            base64_part = base64_part_with_tag.split('#')[0].split('/?')[0] # Remove tag and query for decoding
+
             # Add padding and decode
             base64_part_padded = base64_part.replace('-', '+').replace('_', '/')
             missing_padding = len(base64_part_padded) % 4
@@ -20,33 +21,32 @@ class SsrValidator(BaseValidator):
             decoded_bytes = base64.b64decode(base64_part_padded, validate=True)
             decoded_str = decoded_bytes.decode('utf-8')
 
-            # Expected format: server:port:protocol:method:obfs:password_base64/?params#tag
+            # Expected format after decoding: server:port:protocol:method:obfs:password_base64/?params#tag
             parts = decoded_str.split(':')
-            if len(parts) < 6:
-                return False # Minimum required parts
+            if len(parts) < 6: # server, port, protocol, method, obfs, password
+                return False
 
-            # Basic checks on core components
             host = parts[0]
             port = int(parts[1])
-            protocol = parts[2]
+            protocol = parts[2] # SSR Protocol
             method = parts[3]
             obfs = parts[4]
-            password_base64 = parts[5].split('/?')[0] # password part, before query or tag
+            password_encoded = parts[5].split('/?')[0] # Get password part before query string
 
             if not BaseValidator._is_valid_port(port):
                 return False
             if not (BaseValidator._is_valid_domain(host) or BaseValidator._is_valid_ipv4(host) or BaseValidator._is_valid_ipv6(host)):
                 return False
             
-            # Password part can be empty, but if present, should be decodable
-            if password_base64:
+            # Password part can be empty, but if present, should be decodable (urlsafe base64)
+            if password_encoded:
                 try:
-                    base64.urlsafe_b64decode(password_base64 + '==').decode('utf-8')
+                    base64.urlsafe_b64decode(password_encoded + '==').decode('utf-8')
                 except Exception:
                     return False # Invalid password base64
 
-            # Protocol and OBFS parameters can be base64-encoded or plain.
-            # More rigorous checks can be added here if needed for specific protocols/obfs types.
+            # Query parameters are often base64 encoded for SSR (e.g. obfsparam, protparam)
+            # Full validation of these is complex but basic structure should be fine.
 
             return True
         except Exception:
@@ -54,34 +54,35 @@ class SsrValidator(BaseValidator):
 
     @staticmethod
     def clean(link: str) -> str:
-        # SSR links are entirely base64 encoded, so main cleaning is just stripping whitespace
-        # Any internal junk should make is_valid return False.
         cleaned_link = link.strip()
         
-        # If there's a tag, ensure it's URL-encoded for consistency
-        parts = cleaned_link.split('#', 1)
-        if len(parts) > 1:
-            main_part = parts[0]
-            tag_part = unquote(parts[1])
-            # Re-encode tag after cleaning
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+        # Extract base64 part and tag
+        base64_part_with_tag = cleaned_link[6:]
+        main_part_components = base64_part_with_tag.split('#', 1)
+        base64_core = main_part_components[0]
+        tag = ""
+        if len(main_part_components) > 1:
+            tag = unquote(main_part_components[1])
+            tag = tag.strip().replace(' ', '_')
+            tag = quote(tag)
 
         # Re-encode the main base64 part to ensure proper padding and valid characters
-        if cleaned_link.startswith("ssr://"):
-            base64_part = cleaned_link[6:].split('#')[0]
-            try:
-                # Add padding, decode, then re-encode for a clean version
-                base64_part_padded = base64_part.replace('-', '+').replace('_', '/')
-                missing_padding = len(base64_part_padded) % 4
-                if missing_padding != 0:
-                    base64_part_padded += '=' * (4 - missing_padding)
-                
-                decoded_str = base64.b64decode(base64_part_padded, validate=True).decode('utf-8')
-                re_encoded_b64 = base64.urlsafe_b64encode(decoded_str.encode('utf-8')).decode().rstrip('=')
-                cleaned_link = cleaned_link.replace(base64_part, re_encoded_b64, 1) # Replace only first occurrence
+        # This is crucial for SSR as the entire config is base64
+        try:
+            # Add padding, decode, then re-encode for a clean version
+            base64_part_padded = base64_core.replace('-', '+').replace('_', '/')
+            missing_padding = len(base64_part_padded) % 4
+            if missing_padding != 0:
+                base64_part_padded += '=' * (4 - missing_padding)
+            
+            decoded_str = base64.b64decode(base64_part_padded, validate=True).decode('utf-8')
+            re_encoded_b64 = base64.urlsafe_b64encode(decoded_str.encode('utf-8')).decode().rstrip('=')
+            main_part = f"ssr://{re_encoded_b64}"
 
-            except Exception:
-                pass # If it's not valid base64, leave as is (should be caught by is_valid)
+        except Exception:
+            # If it's not valid base64 (should be caught by is_valid), return original or simplified
+            main_part = f"ssr://{base64_core}" # Fallback to original encoded part if re-encoding fails
         
-        return cleaned_link
+        if tag:
+            return f"{main_part}#{tag}"
+        return main_part
