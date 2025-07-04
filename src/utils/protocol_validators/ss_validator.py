@@ -1,6 +1,7 @@
 import base64
+import re
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, quote
 
 class SsValidator(BaseValidator):
     @staticmethod
@@ -8,38 +9,38 @@ class SsValidator(BaseValidator):
         if not link.startswith("ss://"):
             return False
         try:
-            # SS links are usually ss://base64encoded_method_password@server:port#tag
-            # Or sometimes ss://method:password@server:port#tag (less common for actual clients)
-            base_part = link[5:]
+            base_part_with_tag = link[5:]
+            base_part = base_part_with_tag.split('#')[0] # ignore tag for core validation
             
-            # Split by @
-            parts = base_part.split('@')
-            if len(parts) < 2:
-                return False # Expect at least method_pass_base64@host:port
-
-            method_pass_encoded = parts[0]
-            server_info_part = parts[1]
-
-            # Try to decode method_pass_encoded
+            # Check if it's base64 encoded
             try:
-                method_pass_decoded_bytes = base64.urlsafe_b64decode(method_pass_encoded + '==') # Add padding for safety
-                method_pass_decoded = method_pass_decoded_bytes.decode('utf-8')
-                if ':' not in method_pass_decoded:
-                    return False # Expect method:password
+                # Attempt to decode assuming it's the full base64 string
+                decoded_str_bytes = base64.urlsafe_b64decode(base_part + '==')
+                decoded_str = decoded_str_bytes.decode('utf-8')
+                
+                # If successfully decoded, expect format method:password@server:port
+                if '@' not in decoded_str or ':' not in decoded_str.split('@')[-1]:
+                    return False # Invalid decoded format
+
+                user_info, server_info = decoded_str.rsplit('@', 1)
+                method, password = user_info.split(':', 1)
+                host, port_str = server_info.rsplit(':', 1)
+
             except Exception:
-                # If not base64, assume it's direct method:password
-                if ':' not in method_pass_encoded:
+                # Not base64 encoded, assume direct method:password@server:port
+                if '@' not in base_part or ':' not in base_part.split('@')[-1]:
                     return False
 
-            # Parse server:port
-            server_host_part = server_info_part.split('#')[0] # Remove potential tag
+                user_info, server_info = base_part.rsplit('@', 1)
+                if ':' not in user_info: # Method:Password
+                    return False
 
-            if ':' not in server_host_part:
-                return False
-            
-            host, port_str = server_host_part.rsplit(':', 1) # rsplit for IPv6
-            
-            if not BaseValidator._is_valid_port(int(port_str)):
+                method, password = user_info.split(':', 1)
+                host, port_str = server_info.rsplit(':', 1)
+
+            port = int(port_str)
+
+            if not BaseValidator._is_valid_port(port):
                 return False
             if not (BaseValidator._is_valid_domain(host) or BaseValidator._is_valid_ipv4(host) or BaseValidator._is_valid_ipv6(host)):
                 return False
@@ -50,32 +51,31 @@ class SsValidator(BaseValidator):
 
     @staticmethod
     def clean(link: str) -> str:
-        # SS links can have fragmented parts or trailing data.
-        # This cleaning attempts to keep only the core ss://...#tag part.
         cleaned_link = link.strip()
         
-        # Remove anything after the # if it's not URL-encoded
-        # Or re-encode the fragment if it contains spaces after decoding.
+        # Extract base part and tag
         parts = cleaned_link.split('#', 1)
+        main_part = parts[0]
+        tag = ""
         if len(parts) > 1:
-            main_part = parts[0]
-            tag_part = unquote(parts[1]) # Decode tag to clean, then re-encode if needed
-            cleaned_link = f"{main_part}#{tag_part.strip().replace(' ', '_')}" # Simple cleanup, avoid spaces
+            tag = unquote(parts[1]) # Decode tag first
+            tag = tag.strip().replace(' ', '_') # Clean tag (e.g., spaces to underscores)
+            tag = quote(tag) # Re-encode for URL safety
 
-        # Re-apply full base64 encoding logic if the first part is known to be base64
-        # This is typically handled by ConfigParser's reconstruction, but this is a fallback.
-        if cleaned_link.startswith("ss://"):
-            core_part = cleaned_link[5:].split('#')[0] # Get the part before #
-            if '@' in core_part:
-                method_pass_encoded = core_part.split('@')[0]
-                # If it looks like base64, ensure it's properly formatted base64
+        # Reconstruct base64 part for consistency if it's encoded
+        if main_part.startswith("ss://"):
+            core_link_part = main_part[5:]
+            if '@' in core_link_part:
+                auth_part, addr_part = core_link_part.split('@', 1)
                 try:
-                    decoded_mp = base64.urlsafe_b64decode(method_pass_encoded + '==').decode('utf-8')
-                    if ':' in decoded_mp: # Check if it decodes to method:password
-                        # Re-encode to ensure correct urlsafe padding and no junk
-                        re_encoded_mp = base64.urlsafe_b64encode(decoded_mp.encode('utf-8')).decode().rstrip('=')
-                        cleaned_link = cleaned_link.replace(method_pass_encoded, re_encoded_mp, 1)
+                    # If auth_part is base64, ensure it's properly re-encoded
+                    decoded_auth = base64.urlsafe_b64decode(auth_part + '==').decode('utf-8')
+                    re_encoded_auth = base64.urlsafe_b64encode(decoded_auth.encode('utf-8')).decode().rstrip('=')
+                    main_part = f"ss://{re_encoded_auth}@{addr_part}"
                 except Exception:
-                    pass # Not base64, or malformed base64, leave as is for now
-
-        return cleaned_link
+                    # If not base64, leave as is (method:password format)
+                    pass
+            
+        if tag:
+            return f"{main_part}#{tag}"
+        return main_part
