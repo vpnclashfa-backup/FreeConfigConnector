@@ -1,5 +1,3 @@
-# src/collectors/telegram_collector.py
-
 import httpx # For async HTTP requests
 from bs4 import BeautifulSoup # For parsing HTML
 import re
@@ -14,17 +12,15 @@ from typing import Optional, List, Dict, Tuple
 from src.utils.settings_manager import settings
 from src.utils.source_manager import source_manager
 from src.utils.stats_reporter import stats_reporter
-# NEW: Import from centralized protocol definitions and validator
-from src.utils.protocol_definitions import get_protocol_regex_patterns, get_combined_protocol_regex
-from src.utils.config_validator import ConfigValidator 
+# NEW: Import ConfigParser (no direct regex patterns or ConfigValidator needed here anymore)
+from src.parsers.config_parser import ConfigParser 
 
 
 class TelegramCollector:
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=settings.COLLECTION_TIMEOUT_SECONDS)
-        self.protocol_regex_patterns_map = get_protocol_regex_patterns()
-        self.combined_protocol_regex = get_combined_protocol_regex()
-        self.config_validator = ConfigValidator()
+        # NEW: Initialize ConfigParser to handle all parsing, cleaning, and validation
+        self.config_parser = ConfigParser() 
         print("TelegramCollector: Initialized for Telegram Web (t.me/s/) collection.")
 
     async def _fetch_channel_page(self, channel_username: str) -> Optional[str]:
@@ -32,7 +28,7 @@ class TelegramCollector:
         clean_username = channel_username.lstrip('@')
         url = f"https://t.me/s/{clean_username}" # Public Telegram Web URL
         print(f"TelegramCollector: Fetching channel page: {url}")
-        
+
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -79,7 +75,7 @@ class TelegramCollector:
         """Checks if a config message is within the lookback duration."""
         if not message_date:
             return True
-        
+
         if message_date.tzinfo is None:
             message_date = message_date.replace(tzinfo=timezone.utc)
 
@@ -96,7 +92,7 @@ class TelegramCollector:
                 if source_manager.add_telegram_channel(standardized_channel_name):
                     stats_reporter.increment_discovered_channel_count()
                     print(f"TelegramCollector: Discovered and added new channel: {standardized_channel_name}")
-        
+
     async def collect_from_channel(self, channel_username: str) -> List[Dict]:
         """
         Collects config links from a single Telegram channel page (t.me/s/).
@@ -123,7 +119,7 @@ class TelegramCollector:
 
             msg_date = self._extract_date_from_message_html(msg_wrap)
             messages_with_dates.append((msg_date, message_text_div, msg_wrap))
-        
+
         messages_with_dates.sort(key=lambda x: x[0] if x[0] else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
 
         processed_message_count: int = 0
@@ -136,32 +132,29 @@ class TelegramCollector:
                 break
 
             processed_message_count += 1
-            
+
             # Combine all relevant text from different parts of the message
             all_message_text = message_text_div.get_text(separator=' ', strip=True)
 
-            # NEW: Use ConfigValidator's split method to extract config candidates from the combined text
-            # This is where the core logic for finding configs is now.
-            config_candidates = self.config_validator.split_configs_from_text(all_message_text, self.combined_protocol_regex)
+            # NEW: Delegate parsing, cleaning, and validation to ConfigParser
+            # ConfigParser will return fully validated and cleaned links.
+            parsed_links_info = self.config_parser.parse_content(all_message_text)
 
-            for candidate_link_str in config_candidates:
-                # Try to find which protocol this candidate belongs to and validate it
-                for protocol_name, pattern_str in self.protocol_regex_patterns_map.items():
-                    # Check if the candidate starts with the regex for this protocol
-                    # We need to re-compile pattern_str here if it's not already compiled, or modify PROTOCOL_REGEX_MAP to store compiled patterns.
-                    # For now, let's recompile or ensure pattern_str is a direct prefix check for simplicity and speed.
-                    # As get_protocol_regex_patterns() gives regex strings, we use re.match.
-                    
-                    # Ensure the candidate starts with the protocol prefix (e.g., "vless://")
-                    if candidate_link_str.startswith(protocol_name + '://'):
-                        # Validate the extracted config with the validator's specific protocol validation
-                        # The validation is now very permissive as per current debugging strategy.
-                        if self.config_validator.validate_protocol_config(candidate_link_str, protocol_name):
-                            collected_links.append({'protocol': protocol_name, 'link': candidate_link_str})
-                            stats_reporter.increment_total_collected()
-                            stats_reporter.increment_protocol_count(protocol_name)
-                            stats_reporter.record_source_link("telegram", channel_username, protocol_name)
-                        break # Move to next candidate once a protocol is found and processed for it
+            for link_info in parsed_links_info:
+                protocol = link_info.get('protocol')
+                link = link_info.get('link')
+                
+                if protocol and link: # Ensure protocol and link are valid
+                    # Filter based on active protocols in settings
+                    if protocol in settings.ACTIVE_PROTOCOLS:
+                        collected_links.append({'protocol': protocol, 'link': link})
+                        stats_reporter.increment_total_collected()
+                        stats_reporter.increment_protocol_count(protocol)
+                        stats_reporter.record_source_link("telegram", channel_username, protocol)
+                    # Handle 'subscription' protocol specifically if parse_content returns it (e.g., from Clash/Singbox)
+                    elif protocol == 'subscription':
+                        print(f"TelegramCollector: Found subscription URL: {link}. Attempting to add as a new source.")
+                        await self._discover_and_add_channel(link) # Treat as a new channel for discovery
 
 
             # --- Discovering new channels from message HTML ---
@@ -172,8 +165,8 @@ class TelegramCollector:
                         await self._discover_and_add_channel(href)
                     elif href.startswith('@'):
                          await self._discover_and_add_channel(href)
-                
-        collected_links = list({item['link']: item for item in collected_links}.values())
+
+        collected_links = list({item['link']: item for item in collected_links}.values()) # Ensure uniqueness
 
         if not collected_links:
             print(f"TelegramCollector: No config links found in {channel_username} within the specified criteria.")
@@ -196,7 +189,7 @@ class TelegramCollector:
         tasks = []
         for channel in active_channels:
             tasks.append(self.collect_from_channel(channel))
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for i, result in enumerate(results):
@@ -207,7 +200,7 @@ class TelegramCollector:
                 source_manager.update_telegram_channel_score(channel, -15)
             elif result:
                 all_collected_links.extend(result)
-        
+
         for channel_name in list(source_manager.timeout_telegram_channels.keys()):
             # Check if this channel was processed and is now timed out in source_manager's internal score
             # and was one of the initially active channels.
@@ -224,4 +217,3 @@ class TelegramCollector:
         """Closes the HTTP client session."""
         await self.client.aclose()
         print("TelegramCollector: HTTP client closed.")
-
