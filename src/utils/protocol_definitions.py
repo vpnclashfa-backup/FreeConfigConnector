@@ -66,53 +66,41 @@ def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValida
 def get_combined_protocol_full_regex() -> re.Pattern:
     """
     Returns a compiled RegEx pattern that can detect the *full* link of any active protocol.
-    This is used for splitting long texts into potential config segments more accurately.
-    The pattern now explicitly excludes common non-URL/non-link-ending characters
-    such as quotes, angle brackets, and non-ASCII whitespace/control characters.
-    It also includes common URL-safe characters explicitly.
+    This version constructs a safer regex by first defining allowed URL characters broadly,
+    and then using that character set within the pattern, enclosed in a non-capturing group.
+    This avoids issues with malformed subpatterns.
     """
     active_protocols_info = get_active_protocol_info()
     
+    # Define a set of characters that are generally allowed in URLs
+    # This includes alphanumeric, common symbols, and URL-encoded characters.
+    # Excludes: whitespace, single/double quotes, angle brackets.
+    # Note: # is allowed inside URL, but can be a delimiter for tags, which is handled later.
+    # Parentheses () are allowed in some URL contexts but can cause regex issues if not properly handled in complex patterns.
+    # For safety, let's include all common URL characters and Persian characters.
+    # Exclude characters that are definitely NOT part of a link:
+    # \s (whitespace), ' " < >
+    # Using \S (any non-whitespace) and then explicitly excluding.
+    
+    # This character set is for the *content* of the URL part.
+    # It must handle URL-encoded characters like %2F, %3D, etc.
+    # So, allowing % and then any alphanumeric.
+    url_char_set = r"[a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=\u0600-\u06FF]" # General URL characters + Persian script
+    
+    # Build patterns for each protocol: (?:prefix://[allowed_chars_in_url]+)
     full_patterns_list = []
     for info in active_protocols_info.values():
         prefix = info.get("prefix")
         if isinstance(prefix, str):
-            # Escape the prefix and then append a more robust capture group for URL characters.
-            # This pattern means: capture anything that is NOT a space, quote (single/double),
-            # angle bracket (< >), or hash (#, unless part of a URL fragment).
-            # We'll rely on validators to properly handle the # part and URL decoding.
-            # Also, explicitly include common URL safe characters and Persian characters (for tags/host)
-            # Unicode character range for common Persian/Arabic characters: \u0600-\u06FF
-            # Combining these for robustness.
-            # Also exclude common emoji ranges if they cause issues.
-            
-            # Pattern to match characters typical in a URL or its parameters/fragment,
-            # excluding common delimiters and problematic text-embedding characters.
-            # [^"'\s<>#]+ -- this was the previous.
-            # Let's expand on characters:
-            # - Basic URL safe: a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=
-            # - Common in tags/usernames: \u0600-\u06FF (Persian/Arabic)
-            # - Exclusions that are still present in content: control chars, zero-width chars (already removed by clean_string_for_splitting)
-            #   We need to ensure it stops at actual end of link, not just any whitespace.
-            #   Using [^\s]+ is usually fine IF the cleaning ensures no internal bad chars.
-            #   The specific problem "missing ), unterminated subpattern" indicates a regex parsing error,
-            #   which can happen if a regex is malformed due to an unescaped character *within* the captured part,
-            #   or if the regex engine itself has issues with very long/complex patterns from combined sources.
-
-            # Let's simplify the capture group: match typical URL characters and some common additions.
-            # This pattern is more restrictive than [^\s]+ but attempts to be robust.
-            # It explicitly allows common URL characters, plus characters often found in VLESS/VMESS tags/SNI.
-            # It still stops at whitespace, quotes, angle brackets.
-            url_chars_pattern = r"[a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=\u0600-\u06FF]+"
-            
-            full_patterns_list.append(r"(?:" + re.escape(prefix) + url_chars_pattern + r")")
+            # Escape the prefix to treat its literal value, then add the URL character class.
+            # Using a non-capturing group (?:...) for the whole pattern.
+            full_patterns_list.append(r"(?:" + re.escape(prefix) + url_char_set + r"+)")
 
     # Special handling for "ssh" if it needs alternative prefixes like "sftp://".
     if "ssh" in settings.ACTIVE_PROTOCOLS and "sftp://" not in [info.get("prefix") for info in active_protocols_info.values()]:
-        url_chars_pattern_ssh = r"[a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=\u0600-\u06FF]+"
-        full_patterns_list.append(r"(?:" + re.escape("sftp://") + url_chars_pattern_ssh + r")")
+        full_patterns_list.append(r"(?:" + re.escape("sftp://") + url_char_set + r"+)")
 
-
+    # Join all individual protocol patterns with '|' (OR)
     combined_full_regex_str = '|'.join(full_patterns_list)
     print(f"protocol_definitions: Generated combined FULL regex string: {combined_full_regex_str}")
 
@@ -120,4 +108,6 @@ def get_combined_protocol_full_regex() -> re.Pattern:
         print("protocol_definitions: WARNING: No active protocols found to build combined FULL regex. Returning empty match regex.")
         return re.compile(r'a^')
 
-    return re.compile(combined_full_regex_str, re.IGNORECASE)
+    # Compile the final regex with UNICODE flag for Persian characters and IGNORECASE for prefixes.
+    # re.DOTALL is generally not needed here as we want line-by-line matching, and newline is a \s.
+    return re.compile(combined_full_regex_str, re.IGNORECASE | re.UNICODE)
