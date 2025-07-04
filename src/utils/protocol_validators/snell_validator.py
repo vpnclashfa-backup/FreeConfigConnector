@@ -1,5 +1,5 @@
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class SnellValidator(BaseValidator):
     @staticmethod
@@ -23,7 +23,7 @@ class SnellValidator(BaseValidator):
             
             # Snell often has 'psk' (Pre-Shared Key) in query params.
             query_params = parse_qs(parsed_url.query)
-            if not 'psk' in query_params:
+            if not 'psk' in query_params or not query_params['psk'][0]:
                 return False # PSK is usually required for Snell
 
             return True
@@ -37,6 +37,6 @@ class SnellValidator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
