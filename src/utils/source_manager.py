@@ -1,501 +1,131 @@
-import os
 import json
-from src.utils.settings_manager import settings
-from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Set
-import re # Added for advanced filtering
-import traceback # For detailed error logging
+import os
+from datetime import timedelta
+from typing import Optional, Dict, List
 
-class SourceManager:
-    def __init__(self):
-        self.telegram_channels: Set[str] = self._load_sources_from_file(settings.CHANNELS_FILE)
-        self.websites: Set[str] = self._load_sources_from_file(settings.WEBSITES_FILE)
+class Settings:
+    def __init__(self, config_file: str = 'settings/config.json'):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
+        self.full_config_path = os.path.join(project_root, config_file)
 
-        self.timeout_telegram_channels: Dict[str, Dict[str, str]] = self._load_timeout_sources(settings.TIMEOUT_TELEGRAM_CHANNELS_FILE)
-        self.timeout_websites: Dict[str, Dict[str, str]] = self._load_timeout_sources(settings.TIMEOUT_WEBSITES_FILE)
+        self.config_data = self._load_config()
+        self._set_attributes()
 
-        self._all_telegram_scores: Dict[str, int] = {}
-        # Initialize scores for channels from channels.txt or from loaded timeout data
-        for s in self.telegram_channels:
-            self._all_telegram_scores[s] = self.timeout_telegram_channels.get(s, {}).get("score", 0)
-        # Ensure all existing timeout channels also have a score entry in _all_telegram_scores
-        for s, data in self.timeout_telegram_channels.items():
-            if s not in self._all_telegram_scores:
-                self._all_telegram_scores[s] = data.get("score", 0)
+    def _load_config(self) -> Dict:
+        if not os.path.exists(self.full_config_path):
+            print(f"Error: Configuration file not found at {self.full_config_path}. Please create it as described in the steps.")
+            exit(1)
 
-        self._all_website_scores: Dict[str, int] = {}
-        # Initialize scores for websites from websites.txt or from loaded timeout data
-        for s in self.websites:
-            self._all_website_scores[s] = self.timeout_websites.get(s, {}).get("score", 0)
-        # Ensure all existing timeout websites also have a score entry in _all_website_scores
-        for s, data in self.timeout_websites.items():
-            if s not in self._all_website_scores:
-                self._all_website_scores[s] = data.get("score", 0)
-
-        print(f"SourceManager: Loaded {len(self.telegram_channels)} initial Telegram channels and {len(self.websites)} initial websites.")
-        print(f"SourceManager: Loaded {len(self.timeout_telegram_channels)} previously timed out Telegram channels and {len(self.timeout_websites)} previously timed out websites.")
-
-        self._recover_timed_out_sources()
-        print(f"SourceManager: After recovery, {len(self.telegram_channels)} active Telegram channels and {len(self.websites)} active websites.")
-
-
-    def _load_sources_from_file(self, file_path: str) -> Set[str]:
-        """Loads sources (channels/websites) from a plain text file."""
-        if not os.path.exists(file_path):
-            print(f"SourceManager: Warning: Source file not found at {file_path}. Creating an empty one.")
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                pass
-            return set()
-        with open(file_path, 'r', encoding='utf-8') as f:
-            sources = {line.strip() for line in f if line.strip()}
-            print(f"SourceManager: Loaded {len(sources)} sources from {file_path}.")
-            return sources
-
-    def _save_sources_to_file(self, sources_set: Set[str], file_path: str):
-        """Saves sources (channels/websites) to a plain text file."""
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            for source in sorted(list(sources_set)):
-                f.write(source + '\n')
-            print(f"SourceManager: Saved {len(sources_set)} sources to {file_path}.")
-
-
-    def _load_timeout_sources(self, file_path: str) -> Dict[str, Dict[str, str]]:
-        """Loads timeout sources from a JSON file, including scores and last timeout time."""
-        if not os.path.exists(file_path):
-            print(f"SourceManager: Warning: Timeout file not found at {file_path}. Creating an empty one.")
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump({}, f)
-            return {}
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(self.full_config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                print(f"SourceManager: Loaded {len(data)} timeout sources from {file_path}.")
-                return data
+            return data
         except json.JSONDecodeError as e:
-            print(f"SourceManager: ERROR: Invalid JSON format in timeout file {file_path}: {e}. Returning empty.")
-            return {}
+            print(f"Error reading config.json: Invalid JSON format. Please check the file for errors. {e}")
+            exit(1)
         except Exception as e:
-            print(f"SourceManager: ERROR: An unexpected error occurred while loading timeout file {file_path}: {e}. Returning empty.")
-            traceback.print_exc()
-            return {}
+            print(f"An unexpected error occurred while loading config.json: {e}")
+            exit(1)
 
-    def _save_timeout_sources(self, timeout_dict: Dict[str, Dict[str, str]], file_path: str):
-        """Saves timeout sources to a JSON file."""
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(timeout_dict, f, indent=4, ensure_ascii=False)
-            print(f"SourceManager: Saved {len(timeout_dict)} timeout sources to {file_path}.")
+    def _set_attributes(self):
+        # Collection settings
+        self.ACTIVE_PROTOCOLS: List[str] = self.config_data.get('collection_settings', {}).get('active_protocols', [])
+        self.TELEGRAM_MESSAGE_LOOKBACK_DURATION = timedelta(
+            days=self.config_data.get('collection_settings', {}).get('telegram_message_lookback_days', 7)
+        )
+        max_msg_per_channel: Optional[int] = self.config_data.get('collection_settings', {}).get('telegram_max_messages_per_channel', 500)
+        self.TELEGRAM_MAX_MESSAGES_PER_CHANNEL = None if max_msg_per_channel == "None" else max_msg_per_channel
 
-
-    def _recover_timed_out_sources(self):
-        """Attempts to recover sources from timeout lists if enough time has passed."""
-        now = datetime.now(timezone.utc)
-        print("SourceManager: Attempting to recover timed out sources.")
-
-        channels_to_recover: List[str] = []
-        for channel, data in list(self.timeout_telegram_channels.items()):
-            last_timeout_str = data.get("last_timeout")
-            if last_timeout_str: # Ensure last_timeout exists
-                try:
-                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
-                    if now - last_timeout_dt > settings.TIMEOUT_RECOVERY_DURATION:
-                        channels_to_recover.append(channel)
-                        print(f"SourceManager: Recovering Telegram channel from timeout (duration passed): {channel}")
-                except ValueError:
-                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in channel '{channel}': {last_timeout_str}. Skipping recovery for this entry.")
-            else:
-                print(f"SourceManager: WARNING: 'last_timeout' not found for channel '{channel}'. Skipping recovery for this entry.")
-
-        for channel in channels_to_recover:
-            self.telegram_channels.add(channel)
-            del self.timeout_telegram_channels[channel]
-
-        websites_to_recover: List[str] = []
-        for website, data in list(self.timeout_websites.items()):
-            last_timeout_str = data.get("last_timeout")
-            if last_timeout_str: # Ensure last_timeout exists
-                try:
-                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
-                    if now - last_timeout_dt > settings.TIMEOUT_RECOVERY_DURATION:
-                        websites_to_recover.append(website)
-                        print(f"SourceManager: Recovering website from timeout (duration passed): {website}")
-                except ValueError:
-                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in website '{website}': {last_timeout_str}. Skipping recovery for this entry.")
-            else:
-                print(f"SourceManager: WARNING: 'last_timeout' not found for website '{website}'. Skipping recovery for this entry.")
-                
-        for website in websites_to_recover:
-            self.websites.add(website)
-            del self.timeout_websites[website]
-        print(f"SourceManager: Finished recovery. Recovered {len(channels_to_recover)} channels and {len(websites_to_recover)} websites.")
+        self.COLLECTION_TIMEOUT_SECONDS = self.config_data.get('collection_settings', {}).get('collection_timeout_seconds', 15)
 
 
-    def add_telegram_channel(self, channel_username: str) -> bool:
-        """
-        Adds a new Telegram channel to the list of active channels.
-        """
-        standardized_channel = self._standardize_channel_username(channel_username)
-        if not standardized_channel:
-            print(f"SourceManager: Channel '{channel_username}' failed standardization or was filtered by basic rules (e.g., bot, too short, irrelevant name). Not adding.")
-            return False
+        # Parser Settings
+        self.ENABLE_BASE64_DECODING: bool = self.config_data.get('parser_settings', {}).get('enable_base64_decoding', True)
+        self.ENABLE_CLASH_PARSER: bool = self.config_data.get('parser_settings', {}).get('enable_clash_parser', True)
+        self.ENABLE_SINGBOX_PARSER: bool = self.config_data.get('parser_settings', {}).get('enable_singbox_parser', True)
+        self.ENABLE_JSON_PARSER: bool = self.config_data.get('parser_settings', {}).get('enable_json_parser', True)
+        self.IGNORE_UNPARSEABLE_CONTENT: bool = self.config_data.get('parser_settings', {}).get('ignore_unparseable_content', False)
 
-        if self._should_ignore_telegram_channel(standardized_channel):
-            print(f"SourceManager: Ignoring Telegram channel '{standardized_channel}' based on advanced filtering rules. Not adding.")
-            return False
 
-        if standardized_channel in self.telegram_channels:
-            print(f"SourceManager: Channel '{standardized_channel}' already in active list. Not adding.")
-            return False
+        # Discovery Settings
+        self.ENABLE_TELEGRAM_CHANNEL_DISCOVERY: bool = self.config_data.get('discovery_settings', {}).get('enable_telegram_channel_discovery', True)
+        self.ENABLE_CONFIG_LINK_DISCOVERY: bool = self.config_data.get('discovery_settings', {}).get('enable_config_link_discovery', True)
+        self.MAX_DISCOVERED_SOURCES_TO_ADD: int = self.config_data.get('discovery_settings', {}).get('max_discovered_sources_to_add', 50)
+
+
+        # Source Management Settings
+        self.MAX_TIMEOUT_SCORE_TELEGRAM: int = self.config_data.get('source_management', {}).get('max_timeout_score_telegram', -50)
+        self.MAX_TIMEOUT_SCORE_WEB: int = self.config_data.get('source_management', {}).get('max_timeout_score_web', -10)
+        self.TIMEOUT_RECOVERY_DURATION: timedelta = timedelta(
+            days=self.config_data.get('source_management', {}).get('timeout_recovery_duration_days', 30)
+        )
+        self.BLACKLIST_TELEGRAM_CHANNELS: List[str] = self.config_data.get('source_management', {}).get('blacklist_telegram_channels', [])
+        self.BLACKLIST_WEBSITES: List[str] = self.config_data.get('source_management', {}).get('blacklist_websites', [])
+        self.WHITELIST_TELEGRAM_CHANNELS: List[str] = self.config_data.get('source_management', {}).get('whitelist_telegram_channels', [])
+        self.WHITELIST_WEBSITES: List[str] = self.config_data.get('source_management', {}).get('whitelist_websites', [])
+
+        # Proxy Limits
+        self.MAX_TOTAL_PROXIES: int = self.config_data.get('proxy_limits', {}).get('max_total_proxies', 1000)
+        self.MAX_PROXIES_PER_PROTOCOL: Dict[str, int] = self.config_data.get('proxy_limits', {}).get('max_proxies_per_protocol', {})
+
+        # File Paths
+        # Use PROJECT_ROOT for all base paths
+        self.PROJECT_ROOT = os.path.abspath(os.path.join(current_dir, '..', '..')) # Defined here to be consistent and accessible
+
+        self.SOURCES_DIR_NAME: str = self.config_data.get('file_paths', {}).get('sources_dir', 'sources')
+        self.OUTPUT_DIR_NAME: str = self.config_data.get('file_paths', {}).get('output_dir', 'output')
         
-        if standardized_channel in self.timeout_telegram_channels:
-            print(f"SourceManager: Channel '{standardized_channel}' is currently timed out. Not adding to active list.")
-            return False
+        # Ensure OUTPUT_DIR is correctly defined relative to PROJECT_ROOT for other modules
+        self.OUTPUT_DIR: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME) # This is crucial for main.py logging setup
 
-        if self._is_blacklisted_telegram_channel(standardized_channel):
-            print(f"SourceManager: Channel '{standardized_channel}' is blacklisted. Not adding.")
-            return False
+        self.CHANNELS_FILE: str = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('channels_file', 'channels.txt'))
+        self.WEBSITES_FILE: str = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('websites_file', 'websites.txt'))
+        self.COLLECTED_LINKS_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('collected_links_file', 'collected_links.json'))
 
-        if settings.WHITELIST_TELEGRAM_CHANNELS and standardized_channel not in settings.WHITELIST_TELEGRAM_CHANNELS:
-            print(f"SourceManager: Skipping discovered channel {standardized_channel} as it's not in whitelist and whitelist is active. Not adding.")
-            return False
+        self.DISCOVERED_TELEGRAM_CHANNELS_FILE: str = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_telegram_channels_file', 'discovered_telegram_channels.txt'))
+        self.DISCOVERED_WEBSITES_FILE: str = os.path.join(self.PROJECT_ROOT, self.SOURCES_DIR_NAME, self.config_data.get('file_paths', {}).get('discovered_websites_file', 'discovered_websites.txt'))
+        self.TIMEOUT_TELEGRAM_CHANNELS_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_telegram_channels_file', 'timeout_telegram_channels.json'))
+        self.TIMEOUT_WEBSITES_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('timeout_websites_file', 'timeout_websites.json'))
 
-        if len(self.telegram_channels) < (settings.MAX_DISCOVERED_SOURCES_TO_ADD if settings.MAX_DISCOVERED_SOURCES_TO_ADD > 0 else float('inf')):
-            self.telegram_channels.add(standardized_channel)
-            self._all_telegram_scores[standardized_channel] = 0
-            print(f"SourceManager: ADDED new Telegram channel '{standardized_channel}' to active list.")
-            return True
-        else:
-            print(f"SourceManager: Max discovered Telegram channels limit ({settings.MAX_DISCOVERED_SOURCES_TO_ADD}) reached. Skipping '{standardized_channel}'.")
-        return False
+        # Subscription Output Paths
+        self.SUB_DIR_NAME: str = self.config_data.get('file_paths', {}).get('sub_dir', 'subs')
+        self.FULL_SUB_DIR_PATH: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.SUB_DIR_NAME)
 
-    def add_website(self, url: str) -> bool:
-        """
-        Adds a new website URL to the list of active websites.
-        """
-        # CHANGED: GitHub domains are no longer explicitly avoided in _should_ignore_website_url.
-        if self._should_ignore_website_url(url):
-            print(f"SourceManager: Ignoring website URL '{url}' based on advanced filtering rules. Not adding.")
-            return False
+        self.PLAINTEXT_OUTPUT_DIR_NAME: str = self.config_data.get('file_paths', {}).get('plaintext_output_dir', 'plaintext')
+        self.BASE64_OUTPUT_DIR_NAME: str = self.config_data.get('file_paths', {}).get('base64_output_dir', 'base64')
 
-        if url in self.websites:
-            print(f"SourceManager: Website '{url}' already in active list. Not adding.")
-            return False
-        
-        if url in self.timeout_websites:
-            print(f"SourceManager: Website '{url}' is currently timed out. Not adding to active list.")
-            return False
+        self.FULL_PLAINTEXT_OUTPUT_PATH: str = os.path.join(self.FULL_SUB_DIR_PATH, self.PLAINTEXT_OUTPUT_DIR_NAME)
+        self.FULL_BASE64_OUTPUT_PATH: str = os.path.join(self.FULL_SUB_DIR_PATH, self.BASE64_OUTPUT_DIR_NAME)
 
-        if self._is_blacklisted_website(url):
-            print(f"SourceManager: Website '{url}' is blacklisted. Not adding.")
-            return False
+        self.MIXED_PROTOCOLS_FILE_NAME: str = self.config_data.get('file_paths', {}).get('mixed_links_file', 'mixed_links.txt')
+        self.PLAINTEXT_MIXED_FILE: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.MIXED_PROTOCOLS_FILE_NAME)
+        self.BASE64_MIXED_FILE: str = os.path.join(self.FULL_BASE64_OUTPUT_PATH, self.MIXED_PROTOCOLS_FILE_NAME)
 
-        if settings.WHITELIST_WEBSITES and url not in settings.WHITELIST_WEBSITES:
-            print(f"SourceManager: Skipping discovered website {url} as it's not in whitelist and whitelist is active. Not adding.")
-            return False
-
-        if len(self.websites) < (settings.MAX_DISCOVERED_SOURCES_TO_ADD if settings.MAX_DISCOVERED_SOURCES_TO_ADD > 0 else float('inf')):
-            self.websites.add(url)
-            self._all_website_scores[url] = 0
-            print(f"SourceManager: ADDED new website URL '{url}' to active list.")
-            return True
-        else:
-            print(f"SourceManager: Max discovered websites limit ({settings.MAX_DISCOVERED_SOURCES_TO_ADD}) reached. Skipping '{url}'.")
-        return False
-
-    def update_telegram_channel_score(self, channel_username: str, score_change: int):
-        """Updates the score of a Telegram channel and potentially moves it to timeout."""
-        if channel_username in self._all_telegram_scores:
-            old_score = self._all_telegram_scores[channel_username]
-            self._all_telegram_scores[channel_username] += score_change
-            print(f"SourceManager: Score for '{channel_username}' updated from {old_score} to {self._all_telegram_scores[channel_username]}. Change: {score_change}.")
-            
-            if self._all_telegram_scores[channel_username] <= settings.MAX_TIMEOUT_SCORE_TELEGRAM and \
-               channel_username not in self.timeout_telegram_channels:
-                self._move_telegram_to_timeout(channel_username, self._all_telegram_scores[channel_username])
-            elif self._all_telegram_scores[channel_username] > settings.MAX_TIMEOUT_SCORE_TELEGRAM and \
-                 channel_username in self.timeout_telegram_channels:
-                print(f"SourceManager: Channel '{channel_username}' has improved score ({self._all_telegram_scores[channel_username]}) and is no longer at timeout threshold. Removing from timeout list if present.")
-                self.telegram_channels.add(channel_username)
-                self.timeout_telegram_channels.pop(channel_username, None)
-
-        else:
-            print(f"SourceManager: WARNING: Attempted to update score for unknown Telegram channel '{channel_username}'. Initializing with score {score_change}.")
-            self._all_telegram_scores[channel_username] = score_change
-            if self._all_telegram_scores[channel_username] <= settings.MAX_TIMEOUT_SCORE_TELEGRAM:
-                 self._move_telegram_to_timeout(channel_username, self._all_telegram_scores[channel_username])
+        self.PROTOCOL_SPECIFIC_SUB_DIR_NAME: str = self.config_data.get('file_paths', {}).get('protocol_specific_sub_dir', 'protocols')
+        self.FULL_PLAINTEXT_PROTOCOL_SPECIFIC_DIR: str = os.path.join(self.FULL_PLAINTEXT_OUTPUT_PATH, self.PROTOCOL_SPECIFIC_SUB_DIR_NAME)
+        self.FULL_BASE64_PROTOCOL_SPECIFIC_DIR: str = os.path.join(self.FULL_BASE64_OUTPUT_PATH, self.PROTOCOL_SPECIFIC_SUB_DIR_NAME)
 
 
-    def update_website_score(self, url: str, score_change: int):
-        """Updates the score of a website and potentially moves it to timeout."""
-        if url in self._all_website_scores:
-            old_score = self._all_website_scores[url]
-            self._all_website_scores[url] += score_change
-            print(f"SourceManager: Score for '{url}' updated from {old_score} to {self._all_website_scores[url]}. Change: {score_change}.")
+        # Output Settings
+        self.PROTOCOLS_FOR_MIXED_OUTPUT: List[str] = self.config_data.get('output_settings', {}).get('protocols_for_mixed_output', [])
+        self.OUTPUT_HEADER_BASE64_ENABLED: bool = self.config_data.get('output_settings', {}).get('output_header_base64_enabled', True)
+        self.GENERATE_PROTOCOL_SPECIFIC_FILES: bool = self.config_data.get('output_settings', {}).get('generate_protocol_specific_files', True)
+        self.GENERATE_MIXED_PROTOCOL_FILE: bool = self.config_data.get('output_settings', {}).get('generate_mixed_protocol_file', True)
 
-            if self._all_website_scores[url] <= settings.MAX_TIMEOUT_SCORE_WEB and \
-               url not in self.timeout_websites:
-                self._move_website_to_timeout(url, self._all_website_scores[url])
-            elif self._all_website_scores[url] > settings.MAX_TIMEOUT_SCORE_WEB and \
-                 url in self.timeout_websites:
-                print(f"SourceManager: Website '{url}' has improved score ({self._all_website_scores[url]}) and is no longer at timeout threshold. Removing from timeout list if present.")
-                self.websites.add(url)
-                self.timeout_websites.pop(url, None)
-        else:
-            print(f"SourceManager: WARNING: Attempted to update score for unknown website '{url}'. Initializing with score {score_change}.")
-            self._all_website_scores[url] = score_change
-            if self._all_website_scores[url] <= settings.MAX_TIMEOUT_SCORE_WEB:
-                self._move_website_to_timeout(url, self._all_website_scores[url])
+        # Report File Path
+        self.REPORT_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('report_file', 'report.md'))
+
+        # Add path for error/warning log file
+        self.ERROR_WARNING_LOG_FILE: str = os.path.join(self.PROJECT_ROOT, self.OUTPUT_DIR_NAME, self.config_data.get('file_paths', {}).get('error_warning_log_file', 'error_warnings.log'))
 
 
-    def _move_telegram_to_timeout(self, channel_username: str, score: int):
-        """Moves a Telegram channel from active to timeout list."""
-        print(f"SourceManager: Channel '{channel_username}' reached timeout score ({score}). Moving to timeout list.")
-        self.telegram_channels.discard(channel_username)
-        self.timeout_telegram_channels[channel_username] = {"score": score, "last_timeout": datetime.now(timezone.utc).isoformat()}
+        # Filters (these patterns are now loaded from config, with defaults)
+        self.IGNORE_GITHUB_GIST_URLS: bool = self.config_data.get('filters', {}).get('ignore_github_gist_urls', False)
+        self.IGNORE_GITHUB_RAW_URLS: bool = self.config_data.get('filters', {}).get('ignore_github_raw_urls', False)
+        self.TELEGRAM_CHANNEL_IGNORE_PATTERNS: List[str] = self.config_data.get('filters', {}).get('telegram_channel_ignore_patterns', [
+            r'bot$' # Default: only ignore channels ending with "bot"
+        ])
 
 
-    def _move_website_to_timeout(self, url: str, score: int):
-        """Moves a website from active to timeout list."""
-        print(f"SourceManager: Website '{url}' reached timeout score ({score}). Moving to timeout list.")
-        self.websites.discard(url)
-        self.timeout_websites[url] = {"score": score, "last_timeout": datetime.now(timezone.utc).isoformat()}
-
-
-    def get_active_telegram_channels(self) -> List[str]:
-        """Returns Telegram channels that are active, not blacklisted, not currently timed out, and optionally whitelisted, sorted by score (highest first)."""
-        eligible_channels: List[str] = []
-        for channel in self.telegram_channels:
-            if not self._is_blacklisted_telegram_channel(channel) and \
-               not self._is_timed_out_telegram_channel(channel) and \
-               self._is_whitelisted_telegram_channel(channel):
-                eligible_channels.append(channel)
-        sorted_channels = sorted(eligible_channels, key=lambda ch: self._all_telegram_scores.get(ch, 0), reverse=True)
-        print(f"SourceManager: Returning {len(sorted_channels)} active Telegram channels.")
-        return sorted_channels
-
-    def get_active_websites(self) -> List[str]:
-        """Returns websites that are active, not blacklisted, not currently timed out, and optionally whitelisted, sorted by score (highest first)."""
-        eligible_websites: List[str] = []
-        for website in self.websites:
-            if not self._is_blacklisted_website(website) and \
-               not self._is_timed_out_website(website) and \
-               self._is_whitelisted_website(website):
-                eligible_websites.append(website)
-        sorted_websites = sorted(eligible_websites, key=lambda w: self._all_website_scores.get(w, 0), reverse=True)
-        print(f"SourceManager: Returning {len(sorted_websites)} active websites.")
-        return sorted_websites
-
-    def get_timed_out_telegram_channels(self) -> List[Dict]:
-        """Returns a list of Telegram channels currently in timeout state, sorted by score (highest first, i.e., least negative)."""
-        timeout_list: List[Dict] = []
-        for channel, data in self.timeout_telegram_channels.items():
-            timeout_list.append({"channel": channel, "score": data.get("score", 0), "last_timeout": data.get("last_timeout")})
-        return sorted(timeout_list, key=lambda item: item["score"], reverse=True)
-
-    def get_timed_out_websites(self) -> List[Dict]:
-        """Returns a list of websites currently in timeout state, sorted by score (highest first, i.e., least negative)."""
-        timeout_list: List[Dict] = []
-        for website, data in self.timeout_websites.items():
-            timeout_list.append({"website": website, "score": data.get("score", 0), "last_timeout": data.get("last_timeout")})
-        return sorted(timeout_list, key=lambda item: item["score"], reverse=True)
-
-
-    def _is_blacklisted_telegram_channel(self, channel_username: str) -> bool:
-        is_blacklisted = channel_username in settings.BLACKLIST_TELEGRAM_CHANNELS
-        if is_blacklisted: print(f"SourceManager: Channel '{channel_username}' is explicitly blacklisted.")
-        return is_blacklisted
-
-    def _is_blacklisted_website(self, url: str) -> bool:
-        is_blacklisted = url in settings.BLACKLIST_WEBSITES
-        if is_blacklisted: print(f"SourceManager: Website '{url}' is explicitly blacklisted.")
-        return is_blacklisted
-
-    def _is_whitelisted_telegram_channel(self, channel_username: str) -> bool:
-        is_whitelisted = not settings.WHITELIST_TELEGRAM_CHANNELS or channel_username in settings.WHITELIST_TELEGRAM_CHANNELS
-        return is_whitelisted
-
-    def _is_whitelisted_website(self, url: str) -> bool:
-        is_whitelisted = not settings.WHITELIST_WEBSITES or url in settings.WHITELIST_WEBSITES
-        return is_whitelisted
-
-
-    def _is_timed_out_telegram_channel(self, channel_username: str) -> bool:
-        """Checks if a Telegram channel is in timeout and if it should recover."""
-        if channel_username in self.timeout_telegram_channels:
-            last_timeout_str = self.timeout_telegram_channels[channel_username].get("last_timeout")
-            if last_timeout_str:
-                try:
-                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
-                    is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_RECOVERY_DURATION
-                    if is_timed_out_still:
-                        print(f"SourceManager: Channel '{channel_username}' is still timed out. Will recover in {(settings.TIMEOUT_RECOVERY_DURATION - (datetime.now(timezone.utc) - last_timeout_dt)).total_seconds() / 86400:.2f} days.")
-                    return is_timed_out_still
-                except ValueError:
-                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in channel '{channel}': {last_timeout_str}. Skipping timeout check for this entry.")
-                    return False # Treat as not timed out if date is invalid
-            else:
-                print(f"SourceManager: WARNING: 'last_timeout' not found for channel '{channel}'. Skipping timeout check for this entry.")
-                return False # Treat as not timed out if no timestamp
-        return False
-
-    def _is_timed_out_website(self, url: str) -> bool:
-        """Checks if a website is in timeout and if it should recover."""
-        if url in self.timeout_websites:
-            last_timeout_str = self.timeout_websites[url].get("last_timeout")
-            if last_timeout_str:
-                try:
-                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
-                    is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_RECOVERY_DURATION
-                    if is_timed_out_still:
-                        print(f"SourceManager: Website '{url}' is still timed out. Will recover in {(settings.TIMEOUT_RECOVERY_DURATION - (datetime.now(timezone.utc) - last_timeout_dt)).total_seconds() / 86400:.2f} days.")
-                    return is_timed_out_still
-                except ValueError:
-                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in website '{url}': {last_timeout_str}. Skipping timeout check for this entry.")
-                    return False # Treat as not timed out if date is invalid
-            else:
-                print(f"SourceManager: WARNING: 'last_timeout' not found for website '{url}'. Skipping timeout check for this entry.")
-                return False # Treat as not timed out if no timestamp
-        return False
-
-    def finalize(self):
-        """Saves all current source lists and timeout lists to files."""
-        print("SourceManager: Finalizing and saving source manager state...")
-        self._save_sources_to_file(self.telegram_channels, settings.CHANNELS_FILE)
-        self._save_sources_to_file(self.websites, settings.WEBSITES_FILE)
-
-        current_utc_iso = datetime.now(timezone.utc).isoformat()
-        for channel, score in list(self._all_telegram_scores.items()): # Use list() to avoid RuntimeError if dict changes during iteration
-            # Only save to timeout_telegram_channels if it's explicitly timed out or has a negative score
-            if score <= settings.MAX_TIMEOUT_SCORE_TELEGRAM or channel in self.timeout_telegram_channels:
-                self.timeout_telegram_channels[channel] = {
-                    "score": score,
-                    "last_timeout": self.timeout_telegram_channels.get(channel, {}).get("last_timeout", current_utc_iso)
-                }
-            else: # If score is good and it's not in timed out list, ensure it's not saved as timed out
-                self.timeout_telegram_channels.pop(channel, None)
-
-        for website, score in list(self._all_website_scores.items()): # Use list() to avoid RuntimeError
-            # Only save to timeout_websites if it's explicitly timed out or has a negative score
-            if score <= settings.MAX_TIMEOUT_SCORE_WEB or website in self.timeout_websites:
-                self.timeout_websites[website] = {
-                    "score": score,
-                    "last_timeout": self.timeout_websites.get(website, {}).get("last_timeout", current_utc_iso)
-                }
-            else:
-                self.timeout_websites.pop(website, None)
-
-        self._save_timeout_sources(self.timeout_telegram_channels, settings.TIMEOUT_TELEGRAM_CHANNELS_FILE)
-        self._save_timeout_sources(self.timeout_websites, settings.TIMEOUT_WEBSITES_FILE)
-        print("SourceManager: Source manager state saved.")
-
-    def _standardize_channel_username(self, raw_input: str) -> Optional[str]:
-        """
-        Standardizes Telegram channel username from various URL formats.
-        """
-        original_input = raw_input
-        # Remove common Telegram URL prefixes
-        username = raw_input.replace('https://t.me/s/', '').replace('https://t.me/', '').replace('t.me/s/', '').replace('t.me/', '')
-        
-        # Remove trailing slash if any
-        if username.endswith('/'):
-            username = username[:-1]
-
-        # Extract only valid characters allowed in Telegram usernames
-        # Telegram usernames can contain letters, numbers, and underscores.
-        # This regex removes any other characters.
-        username = re.sub(r'[^a-zA-Z0-9_]', '', username) 
-
-        if not username:
-            print(f"SourceManager: Standardization failed: input '{original_input}' resulted in empty username after cleaning.")
-            return None
-
-        username_lower = username.lower()
-        # Filter common irrelevant names/patterns for Telegram channels
-        # These are usually bot names or specific message links, not actual channels.
-        if username_lower.endswith("bot") or \
-           username_lower in ['proxy', 'img', 'emoji', 'joinchat', 's', '']:
-            print(f"SourceManager: Standardization filtered by basic rules: '{original_input}' (cleaned to '{username}') matches a common irrelevant name/pattern.")
-            return None
-        
-        # Ensure it starts with '@'
-        if not username.startswith('@'):
-            username = '@' + username
-        
-        # Ensure minimum length (e.g., @ + 5 chars = 6 total)
-        if len(username) < 6:
-            print(f"SourceManager: Standardization filtered by length: '{original_input}' (cleaned to '{username}') is too short.")
-            return None
-
-        print(f"SourceManager: Standardized '{original_input}' to '{username}'.")
-        return username.strip()
-
-    # --- Advanced Filtering Logic ---
-    def _should_ignore_telegram_channel(self, channel_username: str) -> bool:
-        """
-        Checks if a Telegram channel should be ignored based on its name.
-        This helps filter out MTProto proxy links masquerading as channel names.
-        """
-        username_lower = channel_username.lower().lstrip('@')
-        
-        # Check against common irrelevant names (if not already handled by standardize)
-        if username_lower in ['proxy', 'img', 'emoji', 'joinchat', 's', '']:
-            print(f"SourceManager: Ignoring Telegram channel '{channel_username}' (common irrelevant name in _should_ignore).")
-            return True
-        
-        # Regex for MTProto proxy links often extracted as channel names by mistake.
-        # They usually contain 'proxyserver' or similar, followed by random chars, and 'ampport', 'secret', etc.
-        mtproto_like_pattern = re.compile(r'^(?:proxyserver|proxy|mtproto|server|config)[a-zA-Z0-9]{5,}.*(?:ampport|secret|media|key|port)\b.*', re.IGNORECASE)
-        
-        # A more general pattern for very long, random-looking strings that are unlikely channel names
-        # This is a heuristic, adjust as needed.
-        long_random_looking_pattern = re.compile(r'^[a-zA-Z0-9]{15,}(?:[_-][a-zA-Z0-9]{5,}){2,}.*', re.IGNORECASE)
-
-
-        if mtproto_like_pattern.search(username_lower) or long_random_looking_pattern.search(username_lower):
-            print(f"SourceManager: Ignoring Telegram channel '{channel_username}' (looks like an MTProto proxy link or random string).")
-            return True
-
-        return False
-
-    def _should_ignore_website_url(self, url: str) -> bool:
-        """
-        Checks if a website URL should be ignored based on its content or domain.
-        GitHub domains are NOT avoided in this version.
-        """
-        url_lower = url.lower()
-        
-        # Keywords that indicate a relevant subscription link.
-        # These are common words found in URLs that actually provide config data.
-        accept_keywords = ['sub', 'subscribe', 'token', 'workers', 'worker', 'dev', 'txt', 'vmess', 'vless', 'reality', 'trojan', 'shadowsocks', 'hy', 'tuic', 'juicity', 'configs', 'links']
-        
-        # Domains/keywords that typically host irrelevant content (e.g., social media, personal blogs, etc.)
-        # CHANGED: 'github.com', 'raw.githubusercontent.com', 'gist.github.com' are EXCLUDED from this list.
-        avoid_domains_and_keywords = ['git.io', 'google.com', 'play.google.com', 'apple.com', 'microsoft.com', 
-                                      'gitlab.com', 'bitbucket.org', 'docs.google.com', 
-                                      'drive.google.com', 't.me'] 
-
-        # Check if URL contains any accept_keywords
-        if not any(kw in url_lower for kw in accept_keywords):
-            print(f"SourceManager: Ignoring website URL '{url}' (no relevant keywords found in URL).")
-            return True
-        
-        # Check if URL contains any avoid_domains_and_keywords
-        if any(dom in url_lower for dom in avoid_domains_and_keywords):
-            print(f"SourceManager: Ignoring website URL '{url}' (contains avoided domain/keyword).")
-            return True
-        
-        # Optional: Further heuristic for known non-config file extensions or paths.
-        # For example, if a GitHub URL ends with .md, .py, .yml, it's likely code/docs not config.
-        # This would require more specific checks beyond just domain.
-        # Example:
-        # if "github.com" in url_lower and (url_lower.endswith(".md") or url_lower.endswith(".py")):
-        #     print(f"SourceManager: Ignoring GitHub URL '{url}' (likely code/docs).")
-        #     return True
-
-        return False
-
-# Create a global instance of SourceManager
-source_manager = SourceManager()
+settings = Settings()
