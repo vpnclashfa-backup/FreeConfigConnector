@@ -2,8 +2,10 @@ import re
 import base64
 import json
 from typing import Optional, Dict
+from urllib.parse import urlparse
+from src.utils.protocol_validators.base_validator import BaseValidator
 
-class VmessValidator:
+class VmessValidator(BaseValidator):
     """
     اعتبارسنجی و پاکسازی لینک‌های پروتکل VMess.
     """
@@ -35,7 +37,7 @@ class VmessValidator:
                 return False
 
             # بررسی نوع فیلدها (مثال: پورت باید عدد باشد)
-            if not isinstance(config_data['port'], int) or not (1 <= config_data['port'] <= 65535):
+            if not VmessValidator._is_valid_port(config_data['port']):
                 return False
 
             # بررسی ساده UUID
@@ -44,6 +46,9 @@ class VmessValidator:
             
             # (اختیاری) می‌توانید بررسی‌های دقیق‌تر دیگری را در اینجا اضافه کنید
             # مانند بررسی مقادیر معتبر برای 'net', 'type', 'tls' و غیره.
+            # مثال:
+            # if config_data['net'] not in ['tcp', 'ws', 'h2', 'quic', 'grpc']: return False
+            # if not VmessValidator._is_valid_domain(config_data['add']) and not VmessValidator._is_valid_ip_address(config_data['add']): return False
 
             return True
         except Exception as e:
@@ -64,13 +69,7 @@ class VmessValidator:
                 return f"vmess://{clean_base64_part_match.group(0).strip()}"
         return link
 
-    @staticmethod
-    def _is_valid_uuid(value: str) -> bool:
-        """بررسی می‌کند که آیا یک رشته UUID معتبر است."""
-        try:
-            # ماژول uuid برای بررسی صحت قالب UUID
-            import uuid
-            uuid.UUID(str(value))
-            return True
-        except ValueError:
-            return False
+    # متدهای کمکی دیگر مخصوص VMess می‌توانند اینجا اضافه شوند
+    # متدهای _is_valid_uuid, _is_valid_port, _is_valid_ip_address, _is_valid_domain
+    # از BaseValidator به ارث برده شده و نیازی به تعریف مجدد نیست.
+    # فقط به عنوان VmessValidator._is_valid_uuid (یا self._is_valid_uuid داخل متدهای دیگر همین کلاس) قابل دسترسی هستند.
