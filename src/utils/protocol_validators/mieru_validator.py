@@ -1,5 +1,5 @@
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class MieruValidator(BaseValidator):
     @staticmethod
@@ -18,8 +18,8 @@ class MieruValidator(BaseValidator):
                 return False
             
             # Mieru might have specific parameters in query or fragment.
-            # Example: mieru://user:pass@host:port/?param=value#tag
             # For simplicity, a basic URL structure check is sufficient.
+            # More specific checks (e.g. for protocol versions, keys etc.) can be added here.
             
             return True
         except Exception:
@@ -32,6 +32,6 @@ class MieruValidator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
