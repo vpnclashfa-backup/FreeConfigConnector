@@ -20,6 +20,7 @@ class WebCollector:
 
     async def _fetch_url_content(self, url: str) -> Optional[str]:
         """Fetches content from a given URL."""
+        print(f"WebCollector: Attempting to fetch URL content from: {url}") # Detailed log
         try:
             # Add a User-Agent header to mimic a browser
             headers = {
@@ -27,13 +28,14 @@ class WebCollector:
             }
             response = await self.client.get(url, headers=headers, follow_redirects=True)
             response.raise_for_status() # Raise an exception for 4xx/5xx responses
+            print(f"WebCollector: Successfully fetched {url}. Status: {response.status_code}") # Success log
             return response.text
         except httpx.TimeoutException:
-            print(f"WebCollector: Timeout fetching {url}")
+            print(f"WebCollector: ERROR: Timeout fetching {url}") # Detailed error
             source_manager.update_website_score(url, -settings.COLLECTION_TIMEOUT_SECONDS)
             return None
         except httpx.HTTPStatusError as e:
-            print(f"WebCollector: HTTP Error {e.response.status_code} fetching {url}: {e.response.text.strip()[:100]}...")
+            print(f"WebCollector: ERROR: HTTP Error {e.response.status_code} fetching {url}. Response text snippet: {e.response.text.strip()[:200]}...") # Detailed error
             if e.response.status_code == 404:
                 source_manager.update_website_score(url, -50)
             elif e.response.status_code == 429:
@@ -43,11 +45,12 @@ class WebCollector:
                 source_manager.update_website_score(url, -10)
             return None
         except httpx.RequestError as e:
-            print(f"WebCollector: Request error fetching {url}: {e}")
+            print(f"WebCollector: ERROR: Request error fetching {url}: {e}") # Detailed error
             source_manager.update_website_score(url, -15)
             return None
         except Exception as e:
-            print(f"WebCollector: An unexpected error occurred fetching {url}: {e}")
+            print(f"WebCollector: ERROR: An unexpected error occurred fetching {url}: {e}") # Detailed error
+            traceback.print_exc() # Print full traceback for unexpected errors
             source_manager.update_website_score(url, -20)
             return None
 
@@ -58,6 +61,7 @@ class WebCollector:
         if "github.com" in github_url and "/blob/" in github_url:
             raw_url = github_url.replace("github.com", "raw.githubusercontent.com")
             raw_url = raw_url.replace("/blob/", "/")
+            print(f"WebCollector: Converting GitHub URL to raw: {github_url} -> {raw_url}") # Detailed log
             return raw_url
         return github_url
 
@@ -66,9 +70,12 @@ class WebCollector:
         Discovers a new website URL and adds it to the SourceManager if enabled.
         """
         if settings.ENABLE_CONFIG_LINK_DISCOVERY:
+            print(f"WebCollector: Attempting to discover/add website: {url}") # Detailed log
             if source_manager.add_website(url):
                 stats_reporter.increment_discovered_website_count()
-                print(f"WebCollector: Discovered and added new website URL: {url}")
+                print(f"WebCollector: Discovered and ADDED new website URL: {url}")
+            else:
+                print(f"WebCollector: Website {url} already exists, blacklisted, or max discovery limit reached. Not added.") # Detailed log
 
     async def collect_from_website(self, url: str) -> List[Dict]:
         """
@@ -79,17 +86,20 @@ class WebCollector:
         collected_links: List[Dict] = []
 
         if not content:
-            print(f"WebCollector: No content fetched for {url}. Skipping parsing.")
+            print(f"WebCollector: No content fetched for {url}. Skipping parsing.") # Detailed log
             return []
 
         # NEW: Delegate parsing, cleaning, and validation to ConfigParser
         parsed_links_info: List[Dict] = self.config_parser.parse_content(content)
 
-        if not parsed_links_info and not settings.IGNORE_UNPARSEABLE_CONTENT:
-            print(f"WebCollector: Could not parse any links from {url}. Content snippet: {content[:100]}...")
-            source_manager.update_website_score(url, -2)
-        elif not parsed_links_info and settings.IGNORE_UNPARSEABLE_CONTENT:
-            print(f"WebCollector: No links parsed from {url}. Ignoring unparseable content as per settings.")
+        if not parsed_links_info:
+            if not settings.IGNORE_UNPARSEABLE_CONTENT:
+                print(f"WebCollector: Could not parse ANY links from {url}. Content snippet: {content[:200]}...") # Detailed log
+                source_manager.update_website_score(url, -2)
+            else:
+                print(f"WebCollector: No links parsed from {url}. Ignoring unparseable content as per settings.") # Detailed log
+        else:
+            print(f"WebCollector: ConfigParser returned {len(parsed_links_info)} potential links from {url}.") # Detailed log
 
 
         for link_info in parsed_links_info:
@@ -97,6 +107,7 @@ class WebCollector:
             link = link_info.get('link')
 
             if not protocol or not link:
+                print(f"WebCollector: Parser returned incomplete link_info: {link_info} from {url}.") # Invalid link_info
                 continue
 
             # Filter based on active protocols in settings
@@ -106,16 +117,21 @@ class WebCollector:
                 stats_reporter.increment_protocol_count(protocol)
                 stats_reporter.record_source_link("web", url, protocol)
                 source_manager.update_website_score(url, 1)
+                print(f"WebCollector: Found valid link ({protocol}) in {url}: {link[:100]}...") # Found link log
             elif protocol == 'subscription': # Handle 'subscription' protocol specifically (e.g., from Clash/Singbox)
-                print(f"WebCollector: Found subscription URL: {link}. Attempting to add as a new source.")
+                print(f"WebCollector: Found subscription URL: {link}. Attempting to add as a new source from {url}.") # Subscription link discovery log
                 await self._discover_and_add_website(link)
                 source_manager.update_website_score(url, 2)
             else:
-                pass # Link found but protocol is not active or is unknown
+                print(f"WebCollector: Found link with inactive or unknown protocol '{protocol}' in {url}: {link[:100]}...") # Inactive protocol log
 
 
-        if collected_links:
-            source_manager.update_website_score(url, 5)
+        if not collected_links: # Updated condition to reflect that if after all processing no links remain, then update score.
+            print(f"WebCollector: No unique valid links found in {url} after all processing. Score -1.") # Detailed log
+            source_manager.update_website_score(url, -1)
+        else:
+            print(f"WebCollector: Successfully found {len(collected_links)} unique valid links in {url}. Score +5.") # Detailed log
+            source_manager.update_website_score(url, 5) # Increased score for finding links
 
         return collected_links
 
@@ -125,8 +141,10 @@ class WebCollector:
         active_websites: List[str] = source_manager.get_active_websites()
 
         if not active_websites:
-            print("WebCollector: No active websites to process.")
+            print("WebCollector: No active websites to process. This could be due to all websites being timed out or filtered.") # Detailed log
             return []
+        else:
+            print(f"WebCollector: Starting collection from {len(active_websites)} active websites.") # Detailed log
 
         tasks = []
         for url in active_websites:
@@ -137,7 +155,7 @@ class WebCollector:
         for i, result in enumerate(results):
             url = active_websites[i]
             if isinstance(result, Exception):
-                print(f"WebCollector: Error processing website {url}: {result}")
+                print(f"WebCollector: FATAL ERROR processing website {url}: {result}") # Critical error log
                 traceback.print_exc()
                 source_manager.update_website_score(url, -20)
             elif result:
