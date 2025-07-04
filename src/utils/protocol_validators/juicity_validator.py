@@ -1,5 +1,5 @@
 from src.utils.protocol_validators.base_validator import BaseValidator
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 class JuicityValidator(BaseValidator):
     @staticmethod
@@ -9,10 +9,13 @@ class JuicityValidator(BaseValidator):
         try:
             parsed_url = urlparse(link)
             
-            user_pass_part = parsed_url.username # Juicity uses username for password/uuid
-            if not user_pass_part: return False # Need a credential part
+            password_part = parsed_url.username # Juicity uses username for password
+            if not password_part: return False # Need a password
 
-            host_port_part = parsed_url.netloc.split('@')[-1]
+            host_port_part = parsed_url.netloc
+            if '@' in host_port_part:
+                host_port_part = host_port_part.split('@', 1)[-1] # Take the host:port part
+            
             if ':' not in host_port_part: return False
 
             host, port_str = host_port_part.rsplit(':', 1)
@@ -23,9 +26,9 @@ class JuicityValidator(BaseValidator):
                 return False
             
             query_params = parse_qs(parsed_url.query)
-            # Juicity often uses 'security=tls', and 'sni' or 'insecure=1'
-            if not ('security' in query_params and query_params['security'][0] == 'tls'):
-                return False # Juicity always uses TLS
+            # Juicity usually requires 'security=tls' and 'sni' or 'insecure=1'
+            if not ('security' in query_params and query_params['security'][0].lower() == 'tls'):
+                return False # Juicity typically implies TLS
 
             if not ('sni' in query_params or ('insecure' in query_params and query_params['insecure'][0].lower() == '1')):
                 return False # Requires SNI or insecure flag
@@ -41,6 +44,6 @@ class JuicityValidator(BaseValidator):
         if len(parts) > 1:
             main_part = parts[0]
             tag_part = unquote(parts[1])
-            from urllib.parse import quote
-            cleaned_link = f"{main_part}#{quote(tag_part.strip().replace(' ', '_'))}"
+            tag_part = tag_part.strip().replace(' ', '_')
+            cleaned_link = f"{main_part}#{quote(tag_part)}"
         return cleaned_link
