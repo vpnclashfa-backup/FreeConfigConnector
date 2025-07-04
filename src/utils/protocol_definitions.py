@@ -1,6 +1,7 @@
 import re
-from typing import Dict, List, Type, Union
+from typing import Dict, List, Type, Union # Ensure Union is imported
 
+# NEW: Import all specific validators
 from src.utils.protocol_validators.base_validator import BaseValidator
 from src.utils.protocol_validators.vmess_validator import VmessValidator
 from src.utils.protocol_validators.vless_validator import VlessValidator
@@ -45,6 +46,8 @@ PROTOCOL_INFO_MAP: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {
     "anytls": {"prefix": "anytls://", "validator": AnytlsValidator},
 }
 
+# Define an ordered list of protocols for matching. More specific protocols first.
+# This is important for cases like Reality (VLESS) which needs to be identified before generic VLESS.
 ORDERED_PROTOCOLS_FOR_MATCHING: List[str] = [
     "reality",
     "vmess", "vless", "trojan", "ss", "ssr", "hysteria", "hysteria2",
@@ -54,20 +57,27 @@ ORDERED_PROTOCOLS_FOR_MATCHING: List[str] = [
 
 
 def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValidator]]]]:
+    """
+    Returns a map of active protocols to their full information (prefix, validator class).
+    Filters based on settings.ACTIVE_PROTOCOLS.
+    """
     active_info: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {}
     for protocol_name in settings.ACTIVE_PROTOCOLS:
         if protocol_name in PROTOCOL_INFO_MAP:
             active_info[protocol_name] = PROTOCOL_INFO_MAP[protocol_name]
         else:
+            # Log this warning only if it's not a known protocol in PROTOCOL_INFO_MAP
+            # AND if it's not 'reality' (as reality is handled specially)
             if protocol_name != 'reality':
                 print(f"protocol_definitions: WARNING: Protocol '{protocol_name}' in settings.ACTIVE_PROTOCOLS is not defined in PROTOCOL_INFO_MAP. Using generic handler.")
             active_info[protocol_name] = {"prefix": f"{protocol_name}://", "validator": BaseValidator}
     return active_info
 
-def get_combined_protocol_full_regex() -> re.Pattern: # <-- Function name changed to reflect "full" regex
+def get_combined_protocol_full_regex() -> re.Pattern:
     """
     Returns a compiled RegEx pattern that can detect the *full* link of any active protocol.
     This is used for splitting long texts into potential config segments more accurately.
+    The pattern captures anything *after* the protocol prefix until a whitespace or end of line.
     """
     active_protocols_info = get_active_protocol_info()
     
@@ -81,8 +91,9 @@ def get_combined_protocol_full_regex() -> re.Pattern: # <-- Function name change
             full_patterns_list.append(r"(?:" + re.escape(prefix) + r"[^\s]+)")
 
     # Special handling for "ssh" if it needs alternative prefixes like "sftp://"
+    # Ensure sftp:// is part of the combined regex if SSH is active
     if "ssh" in settings.ACTIVE_PROTOCOLS and "sftp://" not in [info.get("prefix") for info in active_protocols_info.values()]:
-        full_patterns_list.append(r"(?:" + re.escape("sftp://") + r"[^\s]+)") # Add sftp prefix as a full pattern
+        full_patterns_list.append(r"(?:" + re.escape("sftp://") + r"[^\s]+)")
 
 
     combined_full_regex_str = '|'.join(full_patterns_list)
@@ -90,7 +101,7 @@ def get_combined_protocol_full_regex() -> re.Pattern: # <-- Function name change
 
     if not combined_full_regex_str:
         print("protocol_definitions: WARNING: No active protocols found to build combined FULL regex. Returning empty match regex.")
-        return re.compile(r'a^')
+        return re.compile(r'a^') # Matches nothing if no protocols are active
 
     # Use re.IGNORECASE for case-insensitive matching
     return re.compile(combined_full_regex_str, re.IGNORECASE)
