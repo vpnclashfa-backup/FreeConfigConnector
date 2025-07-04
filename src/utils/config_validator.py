@@ -1,18 +1,46 @@
-# src/utils/config_validator.py
-
 import re
 import base64
 import json
-import uuid 
-from typing import Optional, Tuple, List, Dict
-from urllib.parse import unquote, urlparse, parse_qs
-import ipaddress
-import socket 
+import uuid
+import os
+import importlib
+from typing import Optional, Tuple, List, Dict, Type
 
 from src.utils.settings_manager import settings
-from src.utils.protocol_definitions import PROTOCOL_REGEX_MAP 
+# NEW: Import the BaseValidator and PROTOCOL_INFO_MAP
+from src.utils.protocol_validators.base_validator import BaseValidator
+from src.utils.protocol_definitions import PROTOCOL_INFO_MAP, get_combined_protocol_prefix_regex, ORDERED_PROTOCOLS_FOR_MATCHING
+
 
 class ConfigValidator:
+    def __init__(self):
+        # NEW: Load all protocol validators dynamically
+        self.protocol_validators: Dict[str, Type[BaseValidator]] = self._load_protocol_validators()
+        self.combined_protocol_prefix_regex = get_combined_protocol_prefix_regex()
+        
+        # Keep _is_valid_protocol_prefix for generic checks or when a specific validator isn't loaded
+        # This will now use PROTOCOL_INFO_MAP prefixes.
+        self._all_protocol_prefixes = {info["prefix"] for info in PROTOCOL_INFO_MAP.values() if isinstance(info["prefix"], str)}
+
+
+    def _load_protocol_validators(self) -> Dict[str, Type[BaseValidator]]:
+        """
+        Validatorهای مخصوص پروتکل را به صورت داینامیک از دایرکتوری protocol_validators/ بارگذاری می‌کند.
+        """
+        validators_map: Dict[str, Type[BaseValidator]] = {}
+        validator_dir = os.path.join(os.path.dirname(__file__), 'protocol_validators')
+
+        # Iterate through PROTOCOL_INFO_MAP to find the correct validator class
+        for protocol_name, info in PROTOCOL_INFO_MAP.items():
+            validator_class = info["validator"]
+            if validator_class != BaseValidator: # If a specific validator is defined
+                validators_map[protocol_name] = validator_class
+            else: # Use BaseValidator for generic handling if no specific one is defined
+                validators_map[protocol_name] = BaseValidator
+        
+        return validators_map
+
+
     # --- Base64 Validation and Decoding (UNCHANGED) ---
     @staticmethod
     def is_base64(s: str) -> bool:
@@ -44,131 +72,79 @@ class ConfigValidator:
                 pass
         return None
 
-    # --- Basic Type/Format Validations (UNCHANGED) ---
-    @staticmethod
-    def is_valid_uuid(value: str) -> bool:
-        try:
-            uuid.UUID(str(value))
-            return True
-        except ValueError:
-            return False
+    # --- Basic Type/Format Validations (MOVED TO BASE_VALIDATOR or REMOVED IF ONLY USED INTERNALLY BY PROTOCOL VALIDATORS) ---
+    # is_valid_uuid is now in BaseValidator and VmessValidator uses it.
+    # is_valid_ip_address, is_ipv6, is_valid_domain are also now in BaseValidator.
 
-    @staticmethod
-    def is_valid_ip_address(ip: str) -> bool:
-        if ip.startswith("[") and ip.endswith("]"):
-            ip = ip[1:-1]
-        try:
-            ipaddress.ip_address(ip)
-            return True
-        except ValueError:
-            return False
+    # --- Protocol-Specific Cleaning (REMOVED - now handled by protocol-specific validators) ---
+    # clean_vmess_config, normalize_hysteria2_protocol are removed.
 
-    @staticmethod
-    def is_ipv6(ip: str) -> bool:
-        if ip.startswith("[") and ip.endswith("]"):
-            ip = ip[1:-1]
-        try:
-            return isinstance(ipaddress.ip_address(ip), ipaddress.IPv6Address)
-        except ValueError:
-            return False
-
-    @staticmethod
-    def is_valid_domain(hostname: str) -> bool:
-        if not hostname or len(hostname) > 255:
-            return False
-        if hostname.endswith("."):
-            hostname = hostname[:-1]
-        return all(re.match(r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)$", x) for x in hostname.split("."))
-
-    # --- Protocol-Specific Cleaning (UNCHANGED) ---
-    @staticmethod
-    def clean_vmess_config(config: str) -> str:
-        if config.startswith("vmess://"):
-            base64_part = config[8:]
-            clean_base64_part_match = re.match(r'[A-Za-z0-9+/=_-]*', base64_part)
-            if clean_base64_part_match:
-                return f"vmess://{clean_base64_part_match.group(0).strip()}"
-        return config
-
-    @staticmethod
-    def normalize_hysteria2_protocol(config: str) -> str:
-        if config.startswith('hy2://'):
-            return config.replace('hy2://', 'hysteria2://', 1)
-        return config
-
-    # --- Protocol-Specific Validation (TEMPORARILY MADE VERY PERMISSIVE) ---
-    @staticmethod
-    def is_vmess_config(config: str) -> bool:
-        # TEMPORARY: Basic check for Vmess - just needs to start with vmess:// and have some length
-        return config.startswith('vmess://') and len(config) > 20 # Minimal length check
-
-    @staticmethod
-    def is_tuic_config(config: str) -> bool:
-        # TEMPORARY: Basic check for TUIC
-        return config.startswith('tuic://') and len(config) > 20 # Minimal length check
-    
-    @staticmethod
-    def is_reality_config(config: str) -> bool:
-        # TEMPORARY: Basic check for Reality - just starts with vless:// and might have "reality" somewhere
-        return config.startswith('vless://') and "reality" in config.lower() # Very basic check for presence of keyword
-
-    @staticmethod
-    def is_valid_protocol_prefix(config_str: str) -> bool:
-        # TEMPORARY: Just checks if it starts with any known protocol prefix.
-        return any(config_str.startswith(p + '://') for p in PROTOCOL_REGEX_MAP.keys())
-
-
-    # --- General Cleaning and Splitting from Text (TEMPORARILY SIMPLIFIED) ---
-    @staticmethod
-    def clean_config_string(config_text: str) -> str:
+    # --- Centralized Protocol Validation (NEW DISPATCHER) ---
+    def validate_protocol_config(self, config_link: str, protocol_name: str) -> bool:
         """
-        Removes only common invisible/control characters and reduces excessive whitespace.
-        This version is even LESS aggressive.
+        اعتبارسنجی یک لینک کانفیگ با استفاده از Validator مخصوص پروتکل.
         """
-        config_text = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u200B-\u200F\u0640\u202A-\u202E\u2066-\u2069\uFEFF\u0000-\u001F\u007F-\u009F]', '', config_text)
-        config_text = config_text.replace('&amp;', '&').replace('&gt;', '>').replace('&lt;', '<')
-        config_text = re.sub(r'\s+', ' ', config_text).strip() # Normalize whitespace
-        return config_text
+        validator_class = self.protocol_validators.get(protocol_name)
+        if validator_class:
+            return validator_class.is_valid(config_link)
+        
+        # Fallback for unknown protocols, or protocols without specific validators
+        # This uses a very basic check if no specific validator is found
+        return self.is_valid_protocol_prefix(config_link) # Check if it at least starts with a known prefix
 
-    @staticmethod
-    def split_configs_from_text(text: str, protocols_regex: re.Pattern) -> List[str]:
+
+    # --- Centralized Protocol Cleaning (NEW DISPATCHER) ---
+    def clean_protocol_config(self, config_link: str, protocol_name: str) -> str:
         """
-        Extracts all potential config strings from a larger text.
-        TEMPORARY: This version is much simpler and relies heavily on newlines or double spaces.
+        پاکسازی یک لینک کانفیگ با استفاده از Cleaner مخصوص پروتکل.
+        """
+        validator_class = self.protocol_validators.get(protocol_name)
+        if validator_class and hasattr(validator_class, 'clean'):
+            return validator_class.clean(config_link)
+        return config_link # Return original if no specific cleaner is found
+
+
+    # --- General Cleaning and Splitting from Text (MODIFIED) ---
+    @staticmethod
+    def clean_string_for_splitting(text: str) -> str:
+        """
+        Removes common invisible/control characters and reduces excessive whitespace
+        to prepare text for splitting. This is a preliminary cleaning.
+        """
+        text = re.sub(r'[\u200c-\u200f\u0600-\u0605\u061B-\u061F\u064B-\u065F\u0670\u06D6-\u06DD\u06DF-\u06ED\u200B-\u200F\u0640\u202A-\u202E\u2066-\u2069\uFEFF\u0000-\u001F\u007F-\u009F]', '', text)
+        text = text.replace('&amp;', '&').replace('&gt;', '>').replace('&lt;', '<')
+        text = re.sub(r'\s+', ' ', text).strip() # Normalize whitespace
+        return text
+
+    def split_configs_from_text(self, text: str) -> List[str]:
+        """
+        Extracts all potential config strings from a larger text based on protocol prefixes.
+        This method will use the combined regex from protocol_definitions and
+        then attempt to strip trailing junk.
         """
         extracted_raw_configs: List[str] = []
-        
+
         # Apply minimal cleaning first
-        cleaned_full_text = ConfigValidator.clean_config_string(text)
-        
-        # Split by newlines or by patterns that are unlikely to be *within* a config string.
-        # This is a very permissive split.
-        # It relies on the assumption that configs are usually on separate lines or clearly separated.
-        # We will use the protocol prefix regex to find starts, then split.
-        
+        cleaned_full_text = self.clean_string_for_splitting(text)
+
         # Find all occurrences of known protocol prefixes.
-        protocol_start_matches = list(protocols_regex.finditer(cleaned_full_text))
-        
+        protocol_start_matches = list(self.combined_protocol_prefix_regex.finditer(cleaned_full_text))
+
         if not protocol_start_matches:
             return []
 
         for i, match in enumerate(protocol_start_matches):
             start_index = match.start()
-            
+
             end_of_current_config_candidate = len(cleaned_full_text)
             if i + 1 < len(protocol_start_matches):
                 end_of_current_config_candidate = protocol_start_matches[i+1].start()
-            
+
             # Extract the raw segment from current protocol start to next protocol start (or end of text)
             raw_segment = cleaned_full_text[start_index:end_of_current_config_candidate].strip()
-            
-            # Additional simple cleaning AFTER extraction of the segment
-            # This is where we might strip off obvious trailing junk that's NOT part of the URL itself
-            # Example: "ss://link#title 1️⃣ 📥" --> "ss://link#title"
-            # Look for common patterns that appear *after* a config and signify its end.
+
             # This pattern is specifically designed to cut off common junk observed in your samples
             # like emojis, numbers, and specific Farsi/English text at the end of the line.
-            # This is less aggressive than previous versions.
             trailing_junk_pattern = re.compile(
                 r'(\s+[\d\U0001F000-\U0001FFFF\u2705-\u27BF\ufe00-\ufe0f]+.*|\s+Channel\s+https?:\/\/t\.me\/[a-zA-Z0-9_]+.*|' + # Numbers/Emojis/Channel links
                 r'\s+برای سرور های جدید.*|' + # Farsi common phrase
@@ -183,30 +159,24 @@ class ConfigValidator:
                 r'\s+لطفاً دانلود نداشته باشید.*' # Farsi instruction
                 r'|\s+#\w+\s*#.*' # General #title #tag format (like from sample)
                 r'|\s+@\w+' # Trailing @channel mention (e.g. from your example: @speeds_vpn)
-                , re.IGNORECASE | re.DOTALL # re.DOTALL to match across newlines
+                , re.IGNORECASE | re.DOTALL
             )
-            
-            # Apply protocol-specific cleaning first, THEN try to strip trailing junk.
-            # This is to ensure internal base64/URL parts are not affected.
-            final_config_str = raw_segment
-            if final_config_str.startswith("vmess://"):
-                final_config_str = ConfigValidator.clean_vmess_config(final_config_str)
-            elif final_config_str.startswith("hy2://"):
-                final_config_str = ConfigValidator.normalize_hysteria2_protocol(final_config_str)
-            # Add other protocol-specific cleaning here if needed
-            
-            # Now, attempt to cut off trailing junk
-            junk_match = trailing_junk_pattern.search(final_config_str)
-            if junk_match:
-                final_config_str = final_config_str[:junk_match.start()].strip()
-            else:
-                # If no specific junk pattern, simply strip leading/trailing whitespace
-                final_config_str = final_config_str.strip()
 
+            # Attempt to cut off trailing junk
+            junk_match = trailing_junk_pattern.search(raw_segment)
+            if junk_match:
+                final_config_str = raw_segment[:junk_match.start()].strip()
+            else:
+                final_config_str = raw_segment.strip()
 
             # Final check that it still looks like a valid config start after cleaning
-            if final_config_str and ConfigValidator.is_valid_protocol_prefix(final_config_str):
+            if final_config_str and self.is_valid_protocol_prefix(final_config_str):
                 extracted_raw_configs.append(final_config_str)
-        
+
         return extracted_raw_configs
 
+    def is_valid_protocol_prefix(self, config_str: str) -> bool:
+        """
+        بررسی می‌کند که آیا یک رشته با هر پیشوند پروتکل شناخته شده‌ای شروع می‌شود یا خیر.
+        """
+        return any(config_str.startswith(p) for p in self._all_protocol_prefixes)
