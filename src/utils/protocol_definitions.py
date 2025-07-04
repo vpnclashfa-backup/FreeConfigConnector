@@ -1,6 +1,6 @@
 import re
-from typing import Dict, List, Type
-# NEW: Import all specific validators
+from typing import Dict, List, Type, Union # ADDED Union import
+# NEW: Import the abstract base class for validators and specific validators
 from src.utils.protocol_validators.base_validator import BaseValidator
 from src.utils.protocol_validators.vmess_validator import VmessValidator
 from src.utils.protocol_validators.vless_validator import VlessValidator
@@ -25,7 +25,8 @@ from src.utils.settings_manager import settings
 
 # Define base protocol information including their prefixes and their validator classes.
 # This is the central registry for protocols.
-PROTOCOL_INFO_MAP: Dict[str, Dict[str, str | Type[BaseValidator]]] = {
+# CHANGED: Use Union[str, Type[BaseValidator]] instead of str | Type[BaseValidator]
+PROTOCOL_INFO_MAP: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {
     "http": {"prefix": "http://", "validator": HttpValidator}, # Now uses specific validator
     "socks5": {"prefix": "socks5://", "validator": Socks5Validator}, # Now uses specific validator
     "ss": {"prefix": "ss://", "validator": SsValidator}, # Now uses specific validator
@@ -58,12 +59,12 @@ ORDERED_PROTOCOLS_FOR_MATCHING: List[str] = [
 ]
 
 
-def get_active_protocol_info() -> Dict[str, Dict[str, str | Type[BaseValidator]]]:
+def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValidator]]]]: # CHANGED: Use Union
     """
     Returns a map of active protocols to their full information (prefix, validator class).
     Filters based on settings.ACTIVE_PROTOCOLS.
     """
-    active_info: Dict[str, Dict[str, str | Type[BaseValidator]]] = {}
+    active_info: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {} # CHANGED: Use Union
     for protocol_name in settings.ACTIVE_PROTOCOLS:
         if protocol_name in PROTOCOL_INFO_MAP:
             active_info[protocol_name] = PROTOCOL_INFO_MAP[protocol_name]
