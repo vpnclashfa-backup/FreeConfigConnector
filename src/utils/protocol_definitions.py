@@ -21,11 +21,11 @@ PROTOCOL_INFO_MAP: Dict[str, Dict[str, str | Type[BaseValidator]]] = {
     "vless": {"prefix": "vless://", "validator": BaseValidator}, # Placeholder, create specific VlessValidator later
     "trojan": {"prefix": "trojan://", "validator": BaseValidator}, # Placeholder, create specific TrojanValidator later
     "hysteria": {"prefix": "hysteria://", "validator": BaseValidator},
-    "hysteria2": {"prefix": "hy2://", "validator": BaseValidator}, # Hysteria2 often uses hy2://, handle in validator if needed
+    "hysteria2": {"prefix": "hy2://", "validator": BaseValidator}, # Hysteria2 often uses hy2://
     "tuic": {"prefix": "tuic://", "validator": BaseValidator},
     "wireguard": {"prefix": "wireguard://", "validator": BaseValidator},
     "ssh": {"prefix": "ssh://", "validator": BaseValidator},
-    "warp": {"prefix": "warp://", "validator": BaseValidator},
+    "warp": {"prefix": "warp://", "validator": BaseValidator}, # Warp might have complex parts, capture till space
     "juicity": {"prefix": "juicity://", "validator": BaseValidator},
     "mieru": {"prefix": "mieru://", "validator": BaseValidator},
     "snell": {"prefix": "snell://", "validator": BaseValidator},
