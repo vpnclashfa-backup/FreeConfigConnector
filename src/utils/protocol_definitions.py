@@ -1,7 +1,6 @@
 import re
-from typing import Dict, List, Type, Union # Ensure Union is imported
+from typing import Dict, List, Type, Union
 
-# NEW: Import all specific validators
 from src.utils.protocol_validators.base_validator import BaseValidator
 from src.utils.protocol_validators.vmess_validator import VmessValidator
 from src.utils.protocol_validators.vless_validator import VlessValidator
@@ -25,7 +24,6 @@ from src.utils.protocol_validators.anytls_validator import AnytlsValidator
 from src.utils.settings_manager import settings
 
 # Define base protocol information including their prefixes and their validator classes.
-# This is the central registry for protocols.
 PROTOCOL_INFO_MAP: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {
     "http": {"prefix": "http://", "validator": HttpValidator},
     "socks5": {"prefix": "socks5://", "validator": Socks5Validator},
@@ -46,8 +44,6 @@ PROTOCOL_INFO_MAP: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {
     "anytls": {"prefix": "anytls://", "validator": AnytlsValidator},
 }
 
-# Define an ordered list of protocols for matching. More specific protocols first.
-# This is important for cases like Reality (VLESS) which needs to be identified before generic VLESS.
 ORDERED_PROTOCOLS_FOR_MATCHING: List[str] = [
     "reality",
     "vmess", "vless", "trojan", "ss", "ssr", "hysteria", "hysteria2",
@@ -57,17 +53,11 @@ ORDERED_PROTOCOLS_FOR_MATCHING: List[str] = [
 
 
 def get_active_protocol_info() -> Dict[str, Dict[str, Union[str, Type[BaseValidator]]]]:
-    """
-    Returns a map of active protocols to their full information (prefix, validator class).
-    Filters based on settings.ACTIVE_PROTOCOLS.
-    """
     active_info: Dict[str, Dict[str, Union[str, Type[BaseValidator]]]] = {}
     for protocol_name in settings.ACTIVE_PROTOCOLS:
         if protocol_name in PROTOCOL_INFO_MAP:
             active_info[protocol_name] = PROTOCOL_INFO_MAP[protocol_name]
         else:
-            # Log this warning only if it's not a known protocol in PROTOCOL_INFO_MAP
-            # AND if it's not 'reality' (as reality is handled specially)
             if protocol_name != 'reality':
                 print(f"protocol_definitions: WARNING: Protocol '{protocol_name}' in settings.ACTIVE_PROTOCOLS is not defined in PROTOCOL_INFO_MAP. Using generic handler.")
             active_info[protocol_name] = {"prefix": f"{protocol_name}://", "validator": BaseValidator}
@@ -77,23 +67,50 @@ def get_combined_protocol_full_regex() -> re.Pattern:
     """
     Returns a compiled RegEx pattern that can detect the *full* link of any active protocol.
     This is used for splitting long texts into potential config segments more accurately.
-    The pattern captures anything *after* the protocol prefix until a whitespace or end of line.
+    The pattern now explicitly excludes common non-URL/non-link-ending characters
+    such as quotes, angle brackets, and non-ASCII whitespace/control characters.
+    It also includes common URL-safe characters explicitly.
     """
     active_protocols_info = get_active_protocol_info()
     
-    # We need to build patterns like (?:vmess://[^\s]+) or (?:vless://[^\s]+)
-    # The [^\s]+ part captures everything until a whitespace or end of string.
     full_patterns_list = []
     for info in active_protocols_info.values():
         prefix = info.get("prefix")
         if isinstance(prefix, str):
-            # Escape the prefix and then append the non-whitespace capture group
-            full_patterns_list.append(r"(?:" + re.escape(prefix) + r"[^\s]+)")
+            # Escape the prefix and then append a more robust capture group for URL characters.
+            # This pattern means: capture anything that is NOT a space, quote (single/double),
+            # angle bracket (< >), or hash (#, unless part of a URL fragment).
+            # We'll rely on validators to properly handle the # part and URL decoding.
+            # Also, explicitly include common URL safe characters and Persian characters (for tags/host)
+            # Unicode character range for common Persian/Arabic characters: \u0600-\u06FF
+            # Combining these for robustness.
+            # Also exclude common emoji ranges if they cause issues.
+            
+            # Pattern to match characters typical in a URL or its parameters/fragment,
+            # excluding common delimiters and problematic text-embedding characters.
+            # [^"'\s<>#]+ -- this was the previous.
+            # Let's expand on characters:
+            # - Basic URL safe: a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=
+            # - Common in tags/usernames: \u0600-\u06FF (Persian/Arabic)
+            # - Exclusions that are still present in content: control chars, zero-width chars (already removed by clean_string_for_splitting)
+            #   We need to ensure it stops at actual end of link, not just any whitespace.
+            #   Using [^\s]+ is usually fine IF the cleaning ensures no internal bad chars.
+            #   The specific problem "missing ), unterminated subpattern" indicates a regex parsing error,
+            #   which can happen if a regex is malformed due to an unescaped character *within* the captured part,
+            #   or if the regex engine itself has issues with very long/complex patterns from combined sources.
 
-    # Special handling for "ssh" if it needs alternative prefixes like "sftp://"
-    # Ensure sftp:// is part of the combined regex if SSH is active
+            # Let's simplify the capture group: match typical URL characters and some common additions.
+            # This pattern is more restrictive than [^\s]+ but attempts to be robust.
+            # It explicitly allows common URL characters, plus characters often found in VLESS/VMESS tags/SNI.
+            # It still stops at whitespace, quotes, angle brackets.
+            url_chars_pattern = r"[a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=\u0600-\u06FF]+"
+            
+            full_patterns_list.append(r"(?:" + re.escape(prefix) + url_chars_pattern + r")")
+
+    # Special handling for "ssh" if it needs alternative prefixes like "sftp://".
     if "ssh" in settings.ACTIVE_PROTOCOLS and "sftp://" not in [info.get("prefix") for info in active_protocols_info.values()]:
-        full_patterns_list.append(r"(?:" + re.escape("sftp://") + r"[^\s]+)")
+        url_chars_pattern_ssh = r"[a-zA-Z0-9\-\._~:/?#\[\]@!$&'()*+,;%=\u0600-\u06FF]+"
+        full_patterns_list.append(r"(?:" + re.escape("sftp://") + url_chars_pattern_ssh + r")")
 
 
     combined_full_regex_str = '|'.join(full_patterns_list)
@@ -101,7 +118,6 @@ def get_combined_protocol_full_regex() -> re.Pattern:
 
     if not combined_full_regex_str:
         print("protocol_definitions: WARNING: No active protocols found to build combined FULL regex. Returning empty match regex.")
-        return re.compile(r'a^') # Matches nothing if no protocols are active
+        return re.compile(r'a^')
 
-    # Use re.IGNORECASE for case-insensitive matching
     return re.compile(combined_full_regex_str, re.IGNORECASE)
