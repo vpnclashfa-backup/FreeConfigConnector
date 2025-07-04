@@ -1,7 +1,6 @@
 import re
 import base64
 import json
-import uuid
 import os
 import importlib
 from typing import Optional, Tuple, List, Dict, Type
@@ -9,16 +8,16 @@ from typing import Optional, Tuple, List, Dict, Type
 from src.utils.settings_manager import settings
 # NEW: Import the BaseValidator and PROTOCOL_INFO_MAP
 from src.utils.protocol_validators.base_validator import BaseValidator
-from src.utils.protocol_definitions import PROTOCOL_INFO_MAP, get_combined_protocol_prefix_regex, ORDERED_PROTOCOLS_FOR_MATCHING
+from src.utils.protocol_definitions import PROTOCOL_INFO_MAP, get_combined_protocol_prefix_regex
 
 
 class ConfigValidator:
     def __init__(self):
-        # NEW: Load all protocol validators dynamically
+        # Load all protocol validators dynamically
         self.protocol_validators: Dict[str, Type[BaseValidator]] = self._load_protocol_validators()
         self.combined_protocol_prefix_regex = get_combined_protocol_prefix_regex()
         
-        # Keep _is_valid_protocol_prefix for generic checks or when a specific validator isn't loaded
+        # Keep _all_protocol_prefixes for generic checks or when a specific validator isn't loaded
         # This will now use PROTOCOL_INFO_MAP prefixes.
         self._all_protocol_prefixes = {info["prefix"] for info in PROTOCOL_INFO_MAP.values() if isinstance(info["prefix"], str)}
 
@@ -33,15 +32,16 @@ class ConfigValidator:
         # Iterate through PROTOCOL_INFO_MAP to find the correct validator class
         for protocol_name, info in PROTOCOL_INFO_MAP.items():
             validator_class = info["validator"]
-            if validator_class != BaseValidator: # If a specific validator is defined
+            if issubclass(validator_class, BaseValidator): # Ensure it's a valid validator class
                 validators_map[protocol_name] = validator_class
-            else: # Use BaseValidator for generic handling if no specific one is defined
+            else: 
+                print(f"Warning: Validator for protocol '{protocol_name}' is not a subclass of BaseValidator. Using generic BaseValidator.")
                 validators_map[protocol_name] = BaseValidator
         
         return validators_map
 
 
-    # --- Base64 Validation and Decoding (UNCHANGED) ---
+    # --- Base64 Validation and Decoding (UNCHANGED - these are generic and stay here) ---
     @staticmethod
     def is_base64(s: str) -> bool:
         s_clean = s.rstrip('=')
@@ -72,14 +72,10 @@ class ConfigValidator:
                 pass
         return None
 
-    # --- Basic Type/Format Validations (MOVED TO BASE_VALIDATOR or REMOVED IF ONLY USED INTERNALLY BY PROTOCOL VALIDATORS) ---
-    # is_valid_uuid is now in BaseValidator and VmessValidator uses it.
-    # is_valid_ip_address, is_ipv6, is_valid_domain are also now in BaseValidator.
-
     # --- Protocol-Specific Cleaning (REMOVED - now handled by protocol-specific validators) ---
-    # clean_vmess_config, normalize_hysteria2_protocol are removed.
+    # clean_vmess_config, normalize_hysteria2_protocol were already removed in step 4
 
-    # --- Centralized Protocol Validation (NEW DISPATCHER) ---
+    # --- Centralized Protocol Validation (Dispatcher Logic - UNCHANGED from Step 4) ---
     def validate_protocol_config(self, config_link: str, protocol_name: str) -> bool:
         """
         اعتبارسنجی یک لینک کانفیگ با استفاده از Validator مخصوص پروتکل.
@@ -93,18 +89,19 @@ class ConfigValidator:
         return self.is_valid_protocol_prefix(config_link) # Check if it at least starts with a known prefix
 
 
-    # --- Centralized Protocol Cleaning (NEW DISPATCHER) ---
+    # --- Centralized Protocol Cleaning (Dispatcher Logic - UNCHANGED from Step 4) ---
     def clean_protocol_config(self, config_link: str, protocol_name: str) -> str:
         """
         پاکسازی یک لینک کانفیگ با استفاده از Cleaner مخصوص پروتکل.
         """
         validator_class = self.protocol_validators.get(protocol_name)
+        # Ensure the validator class has a 'clean' method (BaseValidator enforces this, but a safety check doesn't hurt)
         if validator_class and hasattr(validator_class, 'clean'):
             return validator_class.clean(config_link)
         return config_link # Return original if no specific cleaner is found
 
 
-    # --- General Cleaning and Splitting from Text (MODIFIED) ---
+    # --- General Cleaning and Splitting from Text (UNCHANGED from Step 4) ---
     @staticmethod
     def clean_string_for_splitting(text: str) -> str:
         """
