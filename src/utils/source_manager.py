@@ -3,7 +3,8 @@ import json
 from src.utils.settings_manager import settings
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Set
-import re
+import re # Added for advanced filtering
+import traceback # For detailed error logging
 
 class SourceManager:
     def __init__(self):
@@ -14,15 +15,19 @@ class SourceManager:
         self.timeout_websites: Dict[str, Dict[str, str]] = self._load_timeout_sources(settings.TIMEOUT_WEBSITES_FILE)
 
         self._all_telegram_scores: Dict[str, int] = {}
+        # Initialize scores for channels from channels.txt or from loaded timeout data
         for s in self.telegram_channels:
             self._all_telegram_scores[s] = self.timeout_telegram_channels.get(s, {}).get("score", 0)
+        # Ensure all existing timeout channels also have a score entry in _all_telegram_scores
         for s, data in self.timeout_telegram_channels.items():
             if s not in self._all_telegram_scores:
                 self._all_telegram_scores[s] = data.get("score", 0)
 
         self._all_website_scores: Dict[str, int] = {}
+        # Initialize scores for websites from websites.txt or from loaded timeout data
         for s in self.websites:
             self._all_website_scores[s] = self.timeout_websites.get(s, {}).get("score", 0)
+        # Ensure all existing timeout websites also have a score entry in _all_website_scores
         for s, data in self.timeout_websites.items():
             if s not in self._all_website_scores:
                 self._all_website_scores[s] = data.get("score", 0)
@@ -92,20 +97,36 @@ class SourceManager:
 
         channels_to_recover: List[str] = []
         for channel, data in list(self.timeout_telegram_channels.items()):
-            last_timeout_dt = datetime.fromisoformat(data["last_timeout"])
-            if now - last_timeout_dt > settings.TIMEOUT_RECOVERY_DURATION:
-                channels_to_recover.append(channel)
-                print(f"SourceManager: Recovering Telegram channel from timeout (duration passed): {channel}")
+            last_timeout_str = data.get("last_timeout")
+            if last_timeout_str: # Ensure last_timeout exists
+                try:
+                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
+                    if now - last_timeout_dt > settings.TIMEOUT_RECOVERY_DURATION:
+                        channels_to_recover.append(channel)
+                        print(f"SourceManager: Recovering Telegram channel from timeout (duration passed): {channel}")
+                except ValueError:
+                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in channel '{channel}': {last_timeout_str}. Skipping recovery for this entry.")
+            else:
+                print(f"SourceManager: WARNING: 'last_timeout' not found for channel '{channel}'. Skipping recovery for this entry.")
+
         for channel in channels_to_recover:
             self.telegram_channels.add(channel)
             del self.timeout_telegram_channels[channel]
 
         websites_to_recover: List[str] = []
         for website, data in list(self.timeout_websites.items()):
-            last_timeout_dt = datetime.fromisoformat(data["last_timeout"])
-            if now - last_timeout_dt > settings.TIMEOUT_RECOVERY_DURATION:
-                websites_to_recover.append(website)
-                print(f"SourceManager: Recovering website from timeout (duration passed): {website}")
+            last_timeout_str = data.get("last_timeout")
+            if last_timeout_str: # Ensure last_timeout exists
+                try:
+                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
+                    if now - last_timeout_dt > settings.TIMEOUT_RECOVERY_DURATION:
+                        websites_to_recover.append(website)
+                        print(f"SourceManager: Recovering website from timeout (duration passed): {website}")
+                except ValueError:
+                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in website '{website}': {last_timeout_str}. Skipping recovery for this entry.")
+            else:
+                print(f"SourceManager: WARNING: 'last_timeout' not found for website '{website}'. Skipping recovery for this entry.")
+                
         for website in websites_to_recover:
             self.websites.add(website)
             del self.timeout_websites[website]
@@ -126,6 +147,7 @@ class SourceManager:
             return False
 
         if standardized_channel in self.telegram_channels:
+            print(f"SourceManager: Channel '{standardized_channel}' already in active list. Not adding.")
             return False
         
         if standardized_channel in self.timeout_telegram_channels:
@@ -153,12 +175,13 @@ class SourceManager:
         """
         Adds a new website URL to the list of active websites.
         """
-        # NEW: Removed GitHub domains from being explicitly avoided in filtering.
+        # CHANGED: GitHub domains are no longer explicitly avoided in _should_ignore_website_url.
         if self._should_ignore_website_url(url):
             print(f"SourceManager: Ignoring website URL '{url}' based on advanced filtering rules. Not adding.")
             return False
 
         if url in self.websites:
+            print(f"SourceManager: Website '{url}' already in active list. Not adding.")
             return False
         
         if url in self.timeout_websites:
@@ -304,11 +327,18 @@ class SourceManager:
         if channel_username in self.timeout_telegram_channels:
             last_timeout_str = self.timeout_telegram_channels[channel_username].get("last_timeout")
             if last_timeout_str:
-                last_timeout_dt = datetime.fromisoformat(last_timeout_str)
-                is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_RECOVERY_DURATION
-                if is_timed_out_still:
-                    print(f"SourceManager: Channel '{channel_username}' is still timed out. Will recover in {(settings.TIMEOUT_RECOVERY_DURATION - (datetime.now(timezone.utc) - last_timeout_dt)).total_seconds() / 86400:.2f} days.")
-                return is_timed_out_still
+                try:
+                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
+                    is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_RECOVERY_DURATION
+                    if is_timed_out_still:
+                        print(f"SourceManager: Channel '{channel_username}' is still timed out. Will recover in {(settings.TIMEOUT_RECOVERY_DURATION - (datetime.now(timezone.utc) - last_timeout_dt)).total_seconds() / 86400:.2f} days.")
+                    return is_timed_out_still
+                except ValueError:
+                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in channel '{channel}': {last_timeout_str}. Skipping timeout check for this entry.")
+                    return False # Treat as not timed out if date is invalid
+            else:
+                print(f"SourceManager: WARNING: 'last_timeout' not found for channel '{channel}'. Skipping timeout check for this entry.")
+                return False # Treat as not timed out if no timestamp
         return False
 
     def _is_timed_out_website(self, url: str) -> bool:
@@ -316,11 +346,18 @@ class SourceManager:
         if url in self.timeout_websites:
             last_timeout_str = self.timeout_websites[url].get("last_timeout")
             if last_timeout_str:
-                last_timeout_dt = datetime.fromisoformat(last_timeout_str)
-                is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_RECOVERY_DURATION
-                if is_timed_out_still:
-                    print(f"SourceManager: Website '{url}' is still timed out. Will recover in {(settings.TIMEOUT_RECOVERY_DURATION - (datetime.now(timezone.utc) - last_timeout_dt)).total_seconds() / 86400:.2f} days.")
-                return is_timed_out_still
+                try:
+                    last_timeout_dt = datetime.fromisoformat(last_timeout_str)
+                    is_timed_out_still = datetime.now(timezone.utc) - last_timeout_dt < settings.TIMEOUT_RECOVERY_DURATION
+                    if is_timed_out_still:
+                        print(f"SourceManager: Website '{url}' is still timed out. Will recover in {(settings.TIMEOUT_RECOVERY_DURATION - (datetime.now(timezone.utc) - last_timeout_dt)).total_seconds() / 86400:.2f} days.")
+                    return is_timed_out_still
+                except ValueError:
+                    print(f"SourceManager: WARNING: Invalid datetime format for last_timeout in website '{url}': {last_timeout_str}. Skipping timeout check for this entry.")
+                    return False # Treat as not timed out if date is invalid
+            else:
+                print(f"SourceManager: WARNING: 'last_timeout' not found for website '{url}'. Skipping timeout check for this entry.")
+                return False # Treat as not timed out if no timestamp
         return False
 
     def finalize(self):
@@ -330,16 +367,25 @@ class SourceManager:
         self._save_sources_to_file(self.websites, settings.WEBSITES_FILE)
 
         current_utc_iso = datetime.now(timezone.utc).isoformat()
-        for channel, score in self._all_telegram_scores.items():
-            self.timeout_telegram_channels[channel] = {
-                "score": score,
-                "last_timeout": self.timeout_telegram_channels.get(channel, {}).get("last_timeout", current_utc_iso)
-            }
-        for website, score in self._all_website_scores.items():
-            self.timeout_websites[website] = {
-                "score": score,
-                "last_timeout": self.timeout_websites.get(website, {}).get("last_timeout", current_utc_iso)
-            }
+        for channel, score in list(self._all_telegram_scores.items()): # Use list() to avoid RuntimeError if dict changes during iteration
+            # Only save to timeout_telegram_channels if it's explicitly timed out or has a negative score
+            if score <= settings.MAX_TIMEOUT_SCORE_TELEGRAM or channel in self.timeout_telegram_channels:
+                self.timeout_telegram_channels[channel] = {
+                    "score": score,
+                    "last_timeout": self.timeout_telegram_channels.get(channel, {}).get("last_timeout", current_utc_iso)
+                }
+            else: # If score is good and it's not in timed out list, ensure it's not saved as timed out
+                self.timeout_telegram_channels.pop(channel, None)
+
+        for website, score in list(self._all_website_scores.items()): # Use list() to avoid RuntimeError
+            # Only save to timeout_websites if it's explicitly timed out or has a negative score
+            if score <= settings.MAX_TIMEOUT_SCORE_WEB or website in self.timeout_websites:
+                self.timeout_websites[website] = {
+                    "score": score,
+                    "last_timeout": self.timeout_websites.get(website, {}).get("last_timeout", current_utc_iso)
+                }
+            else:
+                self.timeout_websites.pop(website, None)
 
         self._save_timeout_sources(self.timeout_telegram_channels, settings.TIMEOUT_TELEGRAM_CHANNELS_FILE)
         self._save_timeout_sources(self.timeout_websites, settings.TIMEOUT_WEBSITES_FILE)
@@ -350,11 +396,16 @@ class SourceManager:
         Standardizes Telegram channel username from various URL formats.
         """
         original_input = raw_input
+        # Remove common Telegram URL prefixes
         username = raw_input.replace('https://t.me/s/', '').replace('https://t.me/', '').replace('t.me/s/', '').replace('t.me/', '')
         
+        # Remove trailing slash if any
         if username.endswith('/'):
             username = username[:-1]
 
+        # Extract only valid characters allowed in Telegram usernames
+        # Telegram usernames can contain letters, numbers, and underscores.
+        # This regex removes any other characters.
         username = re.sub(r'[^a-zA-Z0-9_]', '', username) 
 
         if not username:
@@ -362,14 +413,18 @@ class SourceManager:
             return None
 
         username_lower = username.lower()
+        # Filter common irrelevant names/patterns for Telegram channels
+        # These are usually bot names or specific message links, not actual channels.
         if username_lower.endswith("bot") or \
            username_lower in ['proxy', 'img', 'emoji', 'joinchat', 's', '']:
             print(f"SourceManager: Standardization filtered by basic rules: '{original_input}' (cleaned to '{username}') matches a common irrelevant name/pattern.")
             return None
         
+        # Ensure it starts with '@'
         if not username.startswith('@'):
             username = '@' + username
         
+        # Ensure minimum length (e.g., @ + 5 chars = 6 total)
         if len(username) < 6:
             print(f"SourceManager: Standardization filtered by length: '{original_input}' (cleaned to '{username}') is too short.")
             return None
@@ -381,15 +436,66 @@ class SourceManager:
     def _should_ignore_telegram_channel(self, channel_username: str) -> bool:
         """
         Checks if a Telegram channel should be ignored based on its name.
+        This helps filter out MTProto proxy links masquerading as channel names.
         """
         username_lower = channel_username.lower().lstrip('@')
         
+        # Check against common irrelevant names (if not already handled by standardize)
         if username_lower in ['proxy', 'img', 'emoji', 'joinchat', 's', '']:
             print(f"SourceManager: Ignoring Telegram channel '{channel_username}' (common irrelevant name in _should_ignore).")
             return True
         
-        mtproto_like_pattern = re.compile(r'^(?:proxyserver|proxy|mtproto|server|config)[a-zA-Z0-9]{5,}', re.IGNORECASE)
-        long_random_looking_pattern = re.compile(r'.*[a-zA-Z0-9]{10,}(?:ampport|secret|media)\b.*', re.IGNORECASE)
+        # Regex for MTProto proxy links often extracted as channel names by mistake.
+        # They usually contain 'proxyserver' or similar, followed by random chars, and 'ampport', 'secret', etc.
+        mtproto_like_pattern = re.compile(r'^(?:proxyserver|proxy|mtproto|server|config)[a-zA-Z0-9]{5,}.*(?:ampport|secret|media|key|port)\b.*', re.IGNORECASE)
+        
+        # A more general pattern for very long, random-looking strings that are unlikely channel names
+        # This is a heuristic, adjust as needed.
+        long_random_looking_pattern = re.compile(r'^[a-zA-Z0-9]{15,}(?:[_-][a-zA-Z0-9]{5,}){2,}.*', re.IGNORECASE)
+
 
         if mtproto_like_pattern.search(username_lower) or long_random_looking_pattern.search(username_lower):
-            print(f
+            print(f"SourceManager: Ignoring Telegram channel '{channel_username}' (looks like an MTProto proxy link or random string).")
+            return True
+
+        return False
+
+    def _should_ignore_website_url(self, url: str) -> bool:
+        """
+        Checks if a website URL should be ignored based on its content or domain.
+        GitHub domains are NOT avoided in this version.
+        """
+        url_lower = url.lower()
+        
+        # Keywords that indicate a relevant subscription link.
+        # These are common words found in URLs that actually provide config data.
+        accept_keywords = ['sub', 'subscribe', 'token', 'workers', 'worker', 'dev', 'txt', 'vmess', 'vless', 'reality', 'trojan', 'shadowsocks', 'hy', 'tuic', 'juicity', 'configs', 'links']
+        
+        # Domains/keywords that typically host irrelevant content (e.g., social media, personal blogs, etc.)
+        # CHANGED: 'github.com', 'raw.githubusercontent.com', 'gist.github.com' are EXCLUDED from this list.
+        avoid_domains_and_keywords = ['git.io', 'google.com', 'play.google.com', 'apple.com', 'microsoft.com', 
+                                      'gitlab.com', 'bitbucket.org', 'docs.google.com', 
+                                      'drive.google.com', 't.me'] 
+
+        # Check if URL contains any accept_keywords
+        if not any(kw in url_lower for kw in accept_keywords):
+            print(f"SourceManager: Ignoring website URL '{url}' (no relevant keywords found in URL).")
+            return True
+        
+        # Check if URL contains any avoid_domains_and_keywords
+        if any(dom in url_lower for dom in avoid_domains_and_keywords):
+            print(f"SourceManager: Ignoring website URL '{url}' (contains avoided domain/keyword).")
+            return True
+        
+        # Optional: Further heuristic for known non-config file extensions or paths.
+        # For example, if a GitHub URL ends with .md, .py, .yml, it's likely code/docs not config.
+        # This would require more specific checks beyond just domain.
+        # Example:
+        # if "github.com" in url_lower and (url_lower.endswith(".md") or url_lower.endswith(".py")):
+        #     print(f"SourceManager: Ignoring GitHub URL '{url}' (likely code/docs).")
+        #     return True
+
+        return False
+
+# Create a global instance of SourceManager
+source_manager = SourceManager()
