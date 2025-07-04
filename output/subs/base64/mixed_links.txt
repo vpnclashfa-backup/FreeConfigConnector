@@ -1,6 +1,0 @@
-//profile-title: base64:TXktQ29uZmlnLVN1YnNjcmlwdGlvbg==
-//profile-update-interval: 1
-//subscription-userinfo: upload=0; download=0; total=10737418240000000; expire=2546249531
-//support-url: https://t.me/your_support_channel # Replace with your actual support channel
-//profile-web-page-url: https://github.com/your_repo # Replace with your actual repo
-
