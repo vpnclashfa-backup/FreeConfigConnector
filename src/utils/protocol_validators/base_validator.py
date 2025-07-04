@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Optional
-import re # Added for regex in helper methods
-import ipaddress # Added for IP validation
-import uuid # Added for UUID validation
+from typing import Optional, Union # <--- این خط تغییر کرده (Union اضافه شد)
+import re
+import ipaddress
+import uuid
 
 class BaseValidator(ABC):
     """
@@ -23,7 +23,7 @@ class BaseValidator(ABC):
         Returns:
             bool: True اگر لینک معتبر باشد، در غیر این صورت False.
         """
-        pass # این متد باید توسط کلاس‌های فرزند پیاده‌سازی شود
+        pass
 
     @staticmethod
     @abstractmethod
@@ -38,9 +38,7 @@ class BaseValidator(ABC):
         Returns:
             str: لینک پاکسازی شده.
         """
-        pass # این متد باید توسط کلاس‌های فرزند پیاده‌سازی شود
-
-    # متدهای کمکی مشترک که توسط Validatorهای خاص پروتکل استفاده می‌شوند:
+        pass
 
     @staticmethod
     def _is_valid_ipv4(ip: str) -> bool:
@@ -75,13 +73,11 @@ class BaseValidator(ABC):
         if not hostname or len(hostname) > 255:
             return False
         if hostname.endswith("."):
-            hostname = hostname[:-1] # Remove trailing dot if present
-        # Regular expression for valid domain parts
-        # Each part must be 1-63 chars, start/end with alphanumeric, contain only alphanumeric/hyphens
+            hostname = hostname[:-1]
         return all(re.match(r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)$", x) for x in hostname.split("."))
 
     @staticmethod
-    def _is_valid_port(port: Union[int, str]) -> bool: # Allow int or str for port
+    def _is_valid_port(port: Union[int, str]) -> bool: # <--- اینجا Union استفاده شده
         """بررسی می‌کند که آیا یک پورت عددی معتبر است."""
         try:
             port_int = int(port)
